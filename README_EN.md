@@ -15,7 +15,6 @@ Please use [releases](https://github.com/TencentBlueKing/BKUnifyLogBeat/releases
 TODO
 
 ## Overview
-* [Design Philosophy](docs/overview/design_en.md)
 * [Architecture Design](docs/overview/architecture_en.md)
 * [Code Directory](docs/overview/code_framework_en.md)
 
