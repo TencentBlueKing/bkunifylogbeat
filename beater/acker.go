@@ -1,0 +1,58 @@
+// Tencent is pleased to support the open source community by making bkunifylogbeat 蓝鲸日志采集器 available.
+//
+// Copyright (C) 2021 THL A29 Limited, a Tencent company.  All rights reserved.
+//
+// bkunifylogbeat 蓝鲸日志采集器 is licensed under the MIT License.
+//
+// License for bkunifylogbeat 蓝鲸日志采集器:
+// --------------------------------------------------------------------
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+// and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all copies or substantial
+// portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+// LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+// WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+// SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+package beater
+
+import (
+	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
+	"github.com/elastic/beats/filebeat/input/file"
+)
+
+// AckEvents 用于处理libeat发送事件后的回调，确保事件至少发送一次
+func AckEvents(data []interface{}) {
+
+	stateless := 0
+	states := make([]file.State, 0, len(data))
+	for _, datum := range data {
+		if datum == nil {
+			stateless++
+			continue
+		}
+
+		st, ok := datum.(file.State)
+		if !ok {
+			stateless++
+			continue
+		}
+
+		states = append(states, st)
+	}
+
+	if len(states) > 0 {
+		logp.L.Debugw("stateful ack", "count", len(states))
+		Registrar.Channel <- states
+	}
+
+	if stateless > 0 {
+		logp.L.Debugw("stateless ack", "count", stateless)
+	}
+}

@@ -1,0 +1,95 @@
+##################### bkunifylogbeat Configuration #############################
+
+#==================== Main ================================================
+max_procs: 1
+logging.level: error
+path.logs: /var/log/gse
+path.data: /var/lib/gse
+path.pid: /var/run/gse
+
+#==================== Registry ================================================
+registry.flush: "1s"
+
+#==================== Output ================================================
+output.bkpipe:
+  endpoint: /var/run/ipc.state.report
+
+#==================== bkunifylogbeat ================================================
+bkunifylogbeat.maxbytes: 1024
+bkunifylogbeat.maxline: 12
+bkunifylogbeat.buffertimeout: 2
+bkunifylogbeat.eventdataid: -1
+bkunifylogbeat.multi_config:
+  - path: "/usr/local/gse/plugins/etc/bkunifylogbeat"
+    file_pattern: "*.conf"
+
+
+bkunifylogbeat.local:
+  - dataid: 123
+    input: tail
+    path:
+      - "/var/log/*.log"
+    exclude_files: [".gz$", ".tar$"]
+    encoding: "utf-8"
+    package: true
+    package_count: 10
+    # How often the input checks for new files in the paths that are specified
+    scan_frequency: "1m"
+    # Close inactive closes the file handler after the predefined period.
+    close_inactive: "5m"
+    # TODO: Ignore files which were modified more then the defined timespan in the past.
+    ignore_older: "1d"
+    # TODO: Files for the modification data is older then clean_inactive the state from the registry is removed
+    clean_inactive: "1m"
+
+    ### Multiline options
+    # The regexp Pattern that has to be matched. The example pattern matches all lines starting with [
+    multiline.pattern: "^\\["
+    multiline.max_lines: 500
+    multiline.timeout: "5s"
+
+    # 自定义字段：兼容旧配置，数据在发送前附加额外字段
+    ext_meta: xxx
+
+    # process the data before delivering
+    processors:
+      # 数据过滤：兼容旧配置
+      - filter:
+          delimiter: "|"
+          filters:
+          - conditions:
+              - index: -1
+                key: "val1"
+                op: "="
+
+      # 数据过滤：通过正则匹配或过滤数据
+      - grep:
+          key_name: "key"
+          regex: "Keep records by regex"
+          exclude: "Exclude records by regex"
+
+      # 数据解析：从path等提取数据
+      - parser:
+          key_name: "path"
+          format: "regex"
+          regex: "/var/log/containers/(?P<container_id>[^.]+).log"
+
+  - dataid: 123
+    input: winlog
+    event_logs:
+      - name: Application
+        ignore_older: 72h
+      - name: System
+      - name: Security
+      - name: ForwardedEvents
+        tags: [forwarded]
+      - name: Windows PowerShell
+        event_id: 400, 403, 600, 800
+      - name: Microsoft-Windows-PowerShell/Operational
+        event_id: 4103, 4104, 4105, 4106
+    processors:
+      - grep:
+          key_name: "event_id"
+          regex: "keep records by regex"
+
+
