@@ -2,5 +2,6 @@
 /bin
 /build
 /vendor
+coverage.out
 *.bkpipe.db
 .DS_Store
