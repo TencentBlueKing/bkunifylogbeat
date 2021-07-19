@@ -1,0 +1,6 @@
+/.idea
+/bin
+/build
+/vendor
+*.bkpipe.db
+.DS_Store
