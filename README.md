@@ -3,8 +3,10 @@
 [![license](https://img.shields.io/badge/license-mit-brightgreen.svg?style=flat)](https://github.com/TencentBlueKing/bkunifylogbeat/blob/master/LICENSE.txt)
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/TencentBlueKing/bkunifylogbeat)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/TencentBlueKing/bkunifylogbeat/pulls)
+[![codecov](https://codecov.io/gh/TencentBlueKing/bkunifylogbeat/branch/master/graph/badge.svg?token=4EWWJ6Q9B4)](https://codecov.io/gh/TencentBlueKing/bkunifylogbeat)
+[![Build](https://github.com/TencentBlueKing/bkunifylogbeat/actions/workflows/build.yml/badge.svg?branch=master&event=schedule)](https://github.com/TencentBlueKing/bkunifylogbeat/actions/workflows/build.yml)
 
-English | [简体中文](README.md)
+[English](README_EN.md) | 简体中文
 
 > **Note**: The `master` branch may be in an *unstable or even broken state* during development.
 Please use [releases](https://github.com/TencentBlueKing/BKUnifyLogBeat/releases) instead of the `master` branch in order to get stable binaries.
