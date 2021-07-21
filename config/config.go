@@ -62,6 +62,12 @@ type Factory = func(rawConfig *beat.Config) (*beat.Config, error)
 
 var registry = make(map[string]Factory)
 
+const (
+	LOG_INPUT  = "log"
+	UDP_INPUT  = "udp"
+	OTLP_INPUT = "otlp"
+)
+
 // Register 用于处理采集任务配置兼容
 func Register(name string, factory Factory) error {
 	if name == "" {

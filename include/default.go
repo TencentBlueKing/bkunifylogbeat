@@ -23,12 +23,12 @@
 package include
 
 import (
+	_ "github.com/TencentBlueKing/bkunifylogbeat/input/oltp"
 	// input type
 	_ "github.com/elastic/beats/filebeat/input/log"
 	_ "github.com/elastic/beats/filebeat/input/stdin"
 	_ "github.com/elastic/beats/filebeat/input/syslog"
 	_ "github.com/elastic/beats/filebeat/input/udp"
-
 	// input config
 	_ "github.com/TencentBlueKing/bkunifylogbeat/config/input"
 

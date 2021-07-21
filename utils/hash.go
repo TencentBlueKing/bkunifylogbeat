@@ -26,12 +26,39 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
 )
 
+//默认配置
+type FactoryHash = func(rawConfig *beat.Config) (error, string)
+
+var registryHash = make(map[string]FactoryHash)
+
+// Register 用于处理采集任务配置兼容
+func RegisterHash(name string, factory FactoryHash) error {
+	if name == "" {
+		return fmt.Errorf("error registering input hash factory: name cannot be empty")
+	}
+	if factory == nil {
+		return fmt.Errorf("error registering input hash factory'%v': config cannot be empty", name)
+	}
+	if _, exists := registryHash[name]; exists {
+		return fmt.Errorf("error registering input hash factory'%v': already registered", name)
+	}
+
+	registryHash[name] = factory
+	return nil
+}
+
 //HashRawConfig: 获取配置hash值
-func HashRawConfig(config *beat.Config) (error, string) {
+func HashRawConfig(inputType string, config *beat.Config) (error, string) {
+
+	f, exist := registryHash[inputType]
+	if exist {
+		return f(config)
+	}
 	source := map[string]interface{}{}
 	config.Unpack(source)
 	b1, err := json.Marshal(source)

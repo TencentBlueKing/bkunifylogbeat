@@ -99,7 +99,11 @@ func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error init config: %v", err)
 	}
-
+	// 解析里面的默认配置
+	err = config.RawConfig.Unpack(&config)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing raw config => %v", err)
+	}
 	// Filter
 	config.HasFilter = false
 	if len(config.Delimiter) == 1 {
@@ -129,7 +133,7 @@ func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
 		}
 	}
 	//根据任务配置获取hash值
-	err, config.ID = utils.HashRawConfig(config.RawConfig)
+	err, config.ID = utils.HashRawConfig(config.Type, config.RawConfig)
 	if err != nil {
 		return nil, err
 	}

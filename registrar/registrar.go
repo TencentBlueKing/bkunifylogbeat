@@ -185,6 +185,10 @@ func (r *Registrar) onEvents(states []file.State) {
 
 	ts := time.Now()
 	for i := range states {
+		// 暂时只有log类型需要进行采集进度管理
+		if states[i].Type != cfg.LOG_INPUT {
+			continue
+		}
 		r.states.UpdateWithTs(states[i], ts)
 	}
 }

@@ -39,6 +39,7 @@ type LogConfig struct {
 
 func init() {
 	config := beat.MapStr{
+		"type":            "log",
 		"enabled":         true,
 		"scan_frequency":  10 * time.Second,
 		"harvester_limit": 1000,

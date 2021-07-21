@@ -54,14 +54,14 @@ func TestHashRawConfigHash(t *testing.T) {
 		"harvester_limit": 10,
 	}
 	rawConfig, _ := common.NewConfigFrom(vars)
-	_, rawConfigHash1 := HashRawConfig(rawConfig)
+	_, rawConfigHash1 := HashRawConfig("log", rawConfig)
 
 	vars2 := map[string]interface{}{
 		"harvester_limit": 10,
 		"dataid":          "999990001",
 	}
 	rawConfig2, _ := common.NewConfigFrom(vars2)
-	_, rawConfigHash2 := HashRawConfig(rawConfig2)
+	_, rawConfigHash2 := HashRawConfig("log", rawConfig2)
 
 	assert.Equal(t, rawConfigHash1, rawConfigHash2)
 
@@ -71,7 +71,7 @@ func TestHashRawConfigHash(t *testing.T) {
 		"dataid":          "999990001",
 	}
 	rawConfig3, _ := common.NewConfigFrom(vars3)
-	_, rawConfigHash3 := HashRawConfig(rawConfig3)
+	_, rawConfigHash3 := HashRawConfig("log", rawConfig3)
 
 	assert.NotEqual(t, rawConfigHash1, rawConfigHash3)
 }

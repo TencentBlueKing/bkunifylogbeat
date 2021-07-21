@@ -52,10 +52,10 @@ func (f v2Formatter) Format(events []*util.Data) beat.MapStr {
 	)
 	datetime, utcTime, timestamp = utils.GetDateTime()
 
-	lastState := events[len(events)-1].GetState()
+	lastEvent := events[len(events)-1]
 	data := beat.MapStr{
-		"dataid":   f.taskConfig.DataID,
-		"filename": lastState.Source,
+		"dataid":   GetDataIdForFormatter(lastEvent, f.taskConfig),
+		"filename": GetFilenameForFormatter(lastEvent, f.taskConfig),
 		"datetime": datetime,
 		"utctime":  utcTime,
 		"time":     timestamp,
@@ -71,6 +71,16 @@ func (f v2Formatter) Format(events []*util.Data) beat.MapStr {
 		}
 		hasEvent = true
 		item["iterationindex"] = index
+		if f.taskConfig.Type == config.UDP_INPUT {
+			item["data"] = item["message"]
+			for _, key := range []string{"message", "log"} {
+				delete(item, key)
+			}
+		}
+		if f.taskConfig.Type == config.OTLP_INPUT {
+			item["data"] = item["message"]
+			delete(item, "message")
+		}
 		items = append(items, item)
 	}
 	// 仅需要更新采集状态的事件数

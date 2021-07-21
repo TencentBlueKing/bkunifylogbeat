@@ -24,6 +24,8 @@ package task
 
 import (
 	"fmt"
+	"github.com/TencentBlueKing/bkunifylogbeat/utils"
+	"strconv"
 	"sync"
 	"time"
 
@@ -153,6 +155,20 @@ func (client *Sender) String() string {
 
 func (client *Sender) cacheSend(event *util.Data) error {
 	source := event.GetState().Source
+	// udp 通过dataid 分隔
+	if client.taskConfig.Type == config.UDP_INPUT {
+		dataId := strconv.Itoa(client.taskConfig.DataID)
+		dataid, err := event.Event.GetValue("dataid")
+		if err == nil {
+			dataId = strconv.FormatInt(dataid.(int64), 10)
+		}
+		address, err := event.Event.GetValue("log.source.address")
+		if err != nil {
+			address = ""
+		}
+		address = utils.GetHostName(address.(string))
+		source = fmt.Sprintf("%s-%s", dataId, address)
+	}
 
 	if !client.taskConfig.CanPackage {
 		return client.send([]*util.Data{event})
