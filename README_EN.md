@@ -1,11 +1,10 @@
 ![](docs/resource/img/logo-en.png)
 ---
-[![license](https://img.shields.io/badge/license-mit-brightgreen.svg?style=flat)](https://github.com/TencentBlueKing/BKUnifyLogBeat/blob/master/LICENSE.txt)
-![GitHub release (latest by date)](https://img.shields.io/github/v/release/TencentBlueKing/BKUnifyLogBeat)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/TencentBlueKing/BKUnifyLogBeat/pulls)
-[![codecov](https://codecov.io/gh/TencentBlueKing/BKUnifyLogBeat/branch/master/graph/badge.svg?token=ATK33SUT2R)](https://codecov.io/gh/TencentBlueKing/BKUnifyLogBeat)
-[![Web](https://github.com/TencentBlueKing/BKUnifyLogBeat/actions/workflows/web.yml/badge.svg?event=schedule)](https://github.com/TencentBlueKing/BKUnifyLogBeat/actions/workflows/web.yml)
-[![Test](https://github.com/TencentBlueKing/BKUnifyLogBeat/actions/workflows/unittest.yml/badge.svg?event=schedule)](https://github.com/TencentBlueKing/BKUnifyLogBeat/actions/workflows/unittest.yml)
+[![license](https://img.shields.io/badge/license-mit-brightgreen.svg?style=flat)](https://github.com/TencentBlueKing/bkunifylogbeat/blob/master/LICENSE.txt)
+![GitHub release (latest by date)](https://img.shields.io/github/v/release/TencentBlueKing/bkunifylogbeat)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/TencentBlueKing/bkunifylogbeat/pulls)
+[![codecov](https://codecov.io/gh/TencentBlueKing/bkunifylogbeat/branch/master/graph/badge.svg?token=4EWWJ6Q9B4)](https://codecov.io/gh/TencentBlueKing/bkunifylogbeat)
+[![Build](https://github.com/TencentBlueKing/bkunifylogbeat/actions/workflows/build.yml/badge.svg?branch=master&event=schedule)](https://github.com/TencentBlueKing/bkunifylogbeat/actions/workflows/build.yml)
 
 English | [简体中文](README.md)
 
