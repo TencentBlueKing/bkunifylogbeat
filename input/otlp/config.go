@@ -15,5 +15,5 @@ var defaultConfig = &Config{
 
 type Config struct {
 	harvester.ForwarderConfig `config:",inline"`
-	grpc.Config
+	grpc.Config               `config:",inline"`
 }
