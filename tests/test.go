@@ -43,6 +43,7 @@ func MockLogEvent(source string, content string) *util.Data {
 	data.SetState(file.State{
 		Source: source,
 		Offset: 1,
+		Type:   "log",
 	})
 	return data
 }
