@@ -12,7 +12,7 @@ func init() {
 		"transport": "tcp",
 	}
 
-	err := cfg.Register("udp", func(rawConfig *beat.Config) (*beat.Config, error) {
+	err := cfg.Register("otlp", func(rawConfig *beat.Config) (*beat.Config, error) {
 		var err error
 		defaultConfig := beat.MapStr{}
 		fields := rawConfig.GetFields()
