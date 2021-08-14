@@ -38,11 +38,13 @@ func (t *TraceService) Export(ctx context.Context, req *collectorTrace.ExportTra
 	}
 	for _, resourceSpan := range resourceSpans {
 		instrumentationLibrarySpan := resourceSpan.GetInstrumentationLibrarySpans()
-
+		resource := resourceSpan.GetResource()
+		resourceAttributes := resource.GetAttributes()
+		attributes := transformAttributes(resourceAttributes)
+		dataId, errDataId := attributes.GetValue("bk_data_id")
 		if instrumentationLibrarySpan == nil {
 			continue
 		}
-
 		for _, instrumentationLibrarySpan := range instrumentationLibrarySpan {
 			spans := instrumentationLibrarySpan.GetSpans()
 			if spans == nil {
@@ -68,6 +70,7 @@ func (t *TraceService) Export(ctx context.Context, req *collectorTrace.ExportTra
 					"events":         transformEvents(span),
 					"trace_state":    span.TraceState,
 					"status":         span.Status,
+					"resource":       attributes,
 				}
 				messageContent, err := json.Marshal(&message)
 				if err != nil {
@@ -76,8 +79,12 @@ func (t *TraceService) Export(ctx context.Context, req *collectorTrace.ExportTra
 				e.Event = beat.Event{
 					Timestamp: time.Now(),
 					Fields: common.MapStr{
-						"message": string(messageContent),
+						"message":  string(messageContent),
+						"trace_id": formatTraceId(span.TraceId),
 					},
+				}
+				if errDataId == nil {
+					e.Event.Fields.Put("dataid", dataId)
 				}
 				t.forwarder.Send(e)
 			}

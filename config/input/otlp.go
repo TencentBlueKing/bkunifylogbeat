@@ -1,8 +1,12 @@
 package input
 
 import (
+	"fmt"
 	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
+	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
+	"github.com/elastic/beats/filebeat/util"
+	"strconv"
 )
 
 func init() {
@@ -37,5 +41,19 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-
+	err = utils.RegisterCacheIdentifier("otlp", func(event *util.Data, dataId string) string {
+		dataid, err := event.Event.GetValue("dataid")
+		if err == nil {
+			dataId = strconv.FormatInt(dataid.(int64), 10)
+		}
+		address, err := event.Event.GetValue("trace_id")
+		if err != nil {
+			address = ""
+		}
+		address = utils.GetHostName(address.(string))
+		return fmt.Sprintf("%s-%s", dataId, address)
+	})
+	if err != nil {
+		panic(err)
+	}
 }

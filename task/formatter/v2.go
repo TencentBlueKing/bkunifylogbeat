@@ -79,7 +79,9 @@ func (f v2Formatter) Format(events []*util.Data) beat.MapStr {
 		}
 		if f.taskConfig.Type == config.OTLP_INPUT {
 			item["data"] = item["message"]
-			delete(item, "message")
+			for _, key := range []string{"message", "trace_id"} {
+				delete(item, key)
+			}
 		}
 		items = append(items, item)
 	}
