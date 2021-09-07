@@ -178,15 +178,15 @@ func (m *Manager) startTask(config *cfg.TaskConfig) error {
 	}
 	var err error
 	states := registrar.ResetStates(Registrar.GetStates())
-	task := task.NewTask(config, m.beatDone, states)
-	err = task.Start()
+	taskInst := task.NewTask(config, m.beatDone, states)
+	err = taskInst.Start()
 	if err != nil {
-		logp.L.Errorf("start task err, taskid=>%s err=>%v", task.ID, err)
+		logp.L.Errorf("start task err, taskid=>%s err=>%v", taskInst.ID, err)
 		taskError.Add(1)
 		return err
 	}
 	m.wg.Add(1)
-	m.tasks[config.ID] = task
+	m.tasks[config.ID] = taskInst
 	m.tasksConfig[config.ID] = config
 	taskActive.Add(1)
 	return nil
