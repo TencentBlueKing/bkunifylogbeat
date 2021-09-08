@@ -1,0 +1,31 @@
+name: bkunifylogbeat
+version: 7.2.1
+description: 高性能日志采集
+scenario: 数据平台，蓝鲸监控，日志检索等和日志相关的数据. 首次使用插件管理进行操作前，先到日志检索/数据平台等进行设置插件的功能项
+category: official
+config_file: bkunifylogbeat.conf
+config_format: yaml
+launch_node: all
+auto_launch: 0
+is_binary: 1
+use_db: 0
+config_templates:
+  - plugin_version: "*"
+    name: bkunifylogbeat.conf
+    version: 1
+    file_path: etc
+    format: yaml
+    is_main_config: 1
+    source_path: etc/bkunifylogbeat_main.conf.tpl
+  - plugin_version: "*"
+    name: bkunifylogbeat.conf
+    version: 1
+    file_path: etc/bkunifylogbeat
+    format: yaml
+    source_path: etc/bkunifylogbeat.conf.tpl
+control:
+  start: "./start.ksh bkunifylogbeat"
+  stop: "./stop.ksh bkunifylogbeat"
+  restart: "./restart.ksh bkunifylogbeat"
+  reload: "./reload.ksh bkunifylogbeat"
+  version: "./bkunifylogbeat -v"
