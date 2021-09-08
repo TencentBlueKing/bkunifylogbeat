@@ -70,6 +70,8 @@ func (m *Manager) Start() error {
 	var err error
 	logp.L.Info("start manager")
 
+	task.SetResourceLimit(m.config.MaxCpuLimit, m.config.CpuCheckTimes)
+
 	// Task
 	tasks := cfg.GetTasks(m.config)
 	for taskID, task := range tasks {
@@ -97,6 +99,8 @@ func (m *Manager) Stop() error {
 // Reload : diff config, create, remove, update jobs
 func (m *Manager) Reload(config cfg.Config) {
 	logp.L.Infof("[Reload]update config, current tasks=>%d", len(m.tasks))
+
+	task.SetResourceLimit(config.MaxCpuLimit, config.CpuCheckTimes)
 
 	tasks := cfg.GetTasks(config)
 

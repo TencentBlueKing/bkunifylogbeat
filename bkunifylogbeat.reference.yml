@@ -19,6 +19,8 @@ bkunifylogbeat.maxbytes: 1024
 bkunifylogbeat.maxline: 12
 bkunifylogbeat.buffertimeout: 2
 bkunifylogbeat.eventdataid: -1
+bkunifylogbeat.max_cpu_limit: -1
+bkunifylogbeat.cpu_check_times: 10
 bkunifylogbeat.multi_config:
   - path: "/usr/local/gse/plugins/etc/bkunifylogbeat"
     file_pattern: "*.conf"

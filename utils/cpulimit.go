@@ -23,7 +23,6 @@
 package utils
 
 import (
-	"fmt"
 	"os"
 	"runtime"
 	"sync"
@@ -86,7 +85,6 @@ func (c *CPULimit) Start() {
 	// 在1s内可运行的时长
 	timeToRun := time.Duration((float64(time.Second)) * (float64(c.limit) / 100))
 	logp.L.Infof("cpu limit, max time to run in second is %s \n", timeToRun)
-	fmt.Printf("cpu limit, max time to run in second is %s \n", timeToRun)
 	timeToRunSeconds := timeToRun.Seconds()
 
 	go func() {

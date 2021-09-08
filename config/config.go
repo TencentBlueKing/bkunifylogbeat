@@ -38,6 +38,10 @@ type Config struct {
 	Maxline int `config:"maxline"`
 	// timeout for buffer
 	BufferTimeout time.Duration `config:"buffertimeout"`
+	// max cpu limit percent
+	MaxCpuLimit int `config:"max_cpu_limit"` // 最大CPU限制，仅在某些极端情况下开启
+	// CpuCheckTimes
+	CpuCheckTimes int `config:"cpu_check_times"` // 1秒内检测多少次CPU, 可选值，[1-10]
 
 	// SecConfigs sec config path and pattern
 	SecConfigs []SecConfigItem `config:"multi_config"`
@@ -84,6 +88,8 @@ func Parse(cfg *beat.Config) (Config, error) {
 		MaxBytes:      1024 * 512,
 		Maxline:       10,
 		BufferTimeout: 1,
+		MaxCpuLimit:   -1,
+		CpuCheckTimes: 10,
 		Registry: Registry{
 			FlushTimeout: 1 * time.Second,
 			GcFrequency:  1 * time.Minute,
