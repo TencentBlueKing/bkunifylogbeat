@@ -70,6 +70,8 @@ func (m *Manager) Start() error {
 	var err error
 	logp.L.Info("start manager")
 
+	task.SetResourceLimit(m.config.MaxCpuLimit, m.config.CpuCheckTimes)
+
 	// Task
 	tasks := cfg.GetTasks(m.config)
 	for taskID, task := range tasks {
@@ -97,6 +99,8 @@ func (m *Manager) Stop() error {
 // Reload : diff config, create, remove, update jobs
 func (m *Manager) Reload(config cfg.Config) {
 	logp.L.Infof("[Reload]update config, current tasks=>%d", len(m.tasks))
+
+	task.SetResourceLimit(config.MaxCpuLimit, config.CpuCheckTimes)
 
 	tasks := cfg.GetTasks(config)
 
@@ -178,15 +182,15 @@ func (m *Manager) startTask(config *cfg.TaskConfig) error {
 	}
 	var err error
 	states := registrar.ResetStates(Registrar.GetStates())
-	task := task.NewTask(config, m.beatDone, states)
-	err = task.Start()
+	taskInst := task.NewTask(config, m.beatDone, states)
+	err = taskInst.Start()
 	if err != nil {
-		logp.L.Errorf("start task err, taskid=>%s err=>%v", task.ID, err)
+		logp.L.Errorf("start task err, taskid=>%s err=>%v", taskInst.ID, err)
 		taskError.Add(1)
 		return err
 	}
 	m.wg.Add(1)
-	m.tasks[config.ID] = task
+	m.tasks[config.ID] = taskInst
 	m.tasksConfig[config.ID] = config
 	taskActive.Add(1)
 	return nil
