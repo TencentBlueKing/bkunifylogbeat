@@ -24,6 +24,7 @@ package beater
 
 import (
 	"fmt"
+	"github.com/elastic/beats/filebeat/input/file"
 	"sync"
 
 	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
@@ -73,9 +74,10 @@ func (m *Manager) Start() error {
 	task.SetResourceLimit(m.config.MaxCpuLimit, m.config.CpuCheckTimes)
 
 	// Task
+	lastStates := registrar.ResetStates(Registrar.GetStates())
 	tasks := cfg.GetTasks(m.config)
-	for taskID, task := range tasks {
-		err = m.startTask(task)
+	for taskID, taskConfig := range tasks {
+		err = m.startTask(taskConfig, lastStates)
 		if err != nil {
 			logp.L.Errorf("error creating task, taskID=>%s, err=>%v", taskID, err)
 		}
@@ -87,8 +89,8 @@ func (m *Manager) Start() error {
 
 // Close manager when program quit
 func (m *Manager) Stop() error {
-	for _, task := range m.tasks {
-		task.Stop()
+	for _, t := range m.tasks {
+		t.Stop()
 		m.wg.Done()
 	}
 	m.wg.Wait()
@@ -102,6 +104,7 @@ func (m *Manager) Reload(config cfg.Config) {
 
 	task.SetResourceLimit(config.MaxCpuLimit, config.CpuCheckTimes)
 
+	lastStates := registrar.ResetStates(Registrar.GetStates())
 	tasks := cfg.GetTasks(config)
 
 	reloadTasks := make(map[string]*cfg.TaskConfig)
@@ -109,8 +112,8 @@ func (m *Manager) Reload(config cfg.Config) {
 	addTasks := make(map[string]*cfg.TaskConfig)
 
 	//step 1: 生成原来的任务清单
-	for taskID, task := range m.tasksConfig {
-		removeTasks[taskID] = task
+	for taskID, taskConfig := range m.tasksConfig {
+		removeTasks[taskID] = taskConfig
 	}
 
 	//step 2: 根据新配置找出有变动的任务列表
@@ -152,7 +155,7 @@ func (m *Manager) Reload(config cfg.Config) {
 	//step 4：新增的任务需要启动采集、存量任务需要重新加载配置
 	if len(addTasks) > 0 {
 		for _, taskConfig := range addTasks {
-			err = m.startTask(taskConfig)
+			err = m.startTask(taskConfig, lastStates)
 			if err != nil {
 				logp.L.Errorf("start task fail, taskID=>%s, err=>%v", taskConfig.ID, err)
 			}
@@ -176,14 +179,13 @@ func (m *Manager) Reload(config cfg.Config) {
 }
 
 // startTask: 启动任务，调用filebeat.runner开始进行日志采集
-func (m *Manager) startTask(config *cfg.TaskConfig) error {
+func (m *Manager) startTask(config *cfg.TaskConfig, lastStates []file.State) error {
 	if _, ok := m.tasks[config.ID]; ok {
 		return fmt.Errorf("task with same ID already exists: %s", config.ID)
 	}
 	var err error
-	states := registrar.ResetStates(Registrar.GetStates())
-	taskInst := task.NewTask(config, m.beatDone, states)
-	err = taskInst.Start()
+	taskInst := task.NewTask(config, m.beatDone)
+	err = taskInst.Start(lastStates)
 	if err != nil {
 		logp.L.Errorf("start task err, taskid=>%s err=>%v", taskInst.ID, err)
 		taskError.Add(1)

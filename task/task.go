@@ -92,7 +92,6 @@ type Task struct {
 	ID               string
 	config           *cfg.TaskConfig
 	beatDone         chan struct{}
-	states           []file.State
 	runner           *input.Runner
 	processors       *Processors
 	sender           *Sender
@@ -105,12 +104,11 @@ type Task struct {
 }
 
 // NewTask 生成采集任务实例
-func NewTask(config *cfg.TaskConfig, beatDone chan struct{}, states []file.State) *Task {
+func NewTask(config *cfg.TaskConfig, beatDone chan struct{}) *Task {
 	task := &Task{
 		ID:       config.ID,
 		config:   config,
 		beatDone: beatDone,
-		states:   states,
 		done:     make(chan struct{}),
 	}
 	task.crawlerReceived = bkmonitoring.NewIntWithDataID(config.DataID, "crawler_received")
@@ -121,7 +119,7 @@ func NewTask(config *cfg.TaskConfig, beatDone chan struct{}, states []file.State
 }
 
 // Start 负责启动采集任务实例
-func (task *Task) Start() error {
+func (task *Task) Start(lastStates []file.State) error {
 	var err error
 
 	// init sender
@@ -140,7 +138,7 @@ func (task *Task) Start() error {
 		return fmt.Errorf(": %s", err)
 	}
 	task.wg.Add(1)
-	p, err := input.New(task.config.RawConfig, ConnectToTask(task), task.beatDone, task.states, nil)
+	p, err := input.New(task.config.RawConfig, ConnectToTask(task), task.beatDone, lastStates, nil)
 	if err != nil {
 		inputFailed.Add(1)
 		return fmt.Errorf("[%s] error while initializing input: %s", task.ID, err)
