@@ -11,6 +11,7 @@ github.com/StackExchange/wmi v1.2.1 h1:VIkavFPXSjcnS+O8yTq7NI32k0R5Aj+v39y29VYDO
 github.com/StackExchange/wmi v1.2.1/go.mod h1:rcmrprowKIVzvc+NUiLncP2uuArMWLCbu9SBzvHz7e8=
 github.com/TencentBlueKing/beats v7.1.7-bk+incompatible h1:chojCtoF2n98lpeocSdo4f59J7lf/Nm6rJOCA+GcEQY=
 github.com/TencentBlueKing/beats v7.1.7-bk+incompatible/go.mod h1:ZMsX71rXxEo52YtXTamkUBNY4BmgxFY1NSZL1l1dNts=
+github.com/TencentBlueKing/beats v7.1.8-bk+incompatible/go.mod h1:ZMsX71rXxEo52YtXTamkUBNY4BmgxFY1NSZL1l1dNts=
 github.com/TencentBlueKing/collector-go-sdk/v2 v2.0.0 h1:2KNdks6NP7BRSUwQeqWsdFFCxVmAJWMGu1bIdTpiIrk=
 github.com/TencentBlueKing/collector-go-sdk/v2 v2.0.0/go.mod h1:WedWCIQbgTlpmFUj9Ol19QPm7hlKzd/nbAFzr3ZxTz4=
 github.com/alecthomas/template v0.0.0-20160405071501-a0175ee3bccc/go.mod h1:LOuyumcjzFXgccqObfd/Ljyb9UuFJ6TxHnclSeseNhc=
