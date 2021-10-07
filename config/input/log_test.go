@@ -69,10 +69,10 @@ func TestNewTaskConfig(t *testing.T) {
 	// 日志采集默认配置
 	taskConfig := map[string]interface{}{}
 	config.RawConfig.Unpack(taskConfig)
-	assert.Equal(t, taskConfig["tail_files"].(bool), true)
-	assert.Equal(t, taskConfig["close_inactive"].(string), "2m0s")
-	assert.Equal(t, taskConfig["ignore_older"].(string), "168h0m0s")
-	assert.Equal(t, taskConfig["clean_inactive"].(string), "169h0m0s")
+	assert.Equal(t, true, taskConfig["tail_files"].(bool))
+	assert.Equal(t, "2m0s", taskConfig["close_inactive"].(string))
+	assert.Equal(t, "168h0m0s", taskConfig["ignore_older"].(string))
+	assert.Equal(t, "4488h0m0s", taskConfig["clean_inactive"].(string))
 
 	//case 1: 变更close_inactive
 	vars["close_inactive"] = "86400s"
@@ -110,7 +110,34 @@ func TestNewTaskConfig(t *testing.T) {
 	}
 	taskConfig = map[string]interface{}{}
 	config.RawConfig.Unpack(taskConfig)
-	assert.Equal(t, taskConfig["ignore_older"].(string), "2678400s")
-	assert.Equal(t, taskConfig["clean_inactive"].(string), "745h0m0s")
+	assert.Equal(t, "2678400s", taskConfig["ignore_older"].(string))
+	assert.Equal(t, "5064h0m0s", taskConfig["clean_inactive"].(string))
 
+	// case 4: 增加clean_inactive配置，比ignore_older大
+	vars["ignore_older"] = "744h0m0s"
+	vars["clean_inactive"] = "768h0m0s"
+
+	config, err = mockTaskConfig(vars)
+	if err != nil {
+		assert.Nil(t, err)
+		return
+	}
+	taskConfig = map[string]interface{}{}
+	config.RawConfig.Unpack(taskConfig)
+	assert.Equal(t, "744h0m0s", taskConfig["ignore_older"].(string))
+	assert.Equal(t, "768h0m0s", taskConfig["clean_inactive"].(string))
+
+	// case 4: 增加clean_inactive配置，比ignore_older小
+	vars["ignore_older"] = "744h0m0s"
+	vars["clean_inactive"] = "12h0m0s"
+
+	config, err = mockTaskConfig(vars)
+	if err != nil {
+		assert.Nil(t, err)
+		return
+	}
+	taskConfig = map[string]interface{}{}
+	config.RawConfig.Unpack(taskConfig)
+	assert.Equal(t, "744h0m0s", taskConfig["ignore_older"].(string))
+	assert.Equal(t, "745h0m0s", taskConfig["clean_inactive"].(string))
 }

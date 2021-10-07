@@ -33,8 +33,12 @@ import (
 
 //如果未配置close_inactive则直接默认为5分钟
 type LogConfig struct {
+	ScanFrequency  time.Duration `config:"scan_frequency" validate:"min=0,nonzero"`
+
 	CloseInactive time.Duration `config:"close_inactive"`
 	IgnoreOlder   time.Duration `config:"ignore_older"`
+
+	CleanInactive time.Duration `config:"clean_inactive" validate:"min=0"`
 }
 
 func init() {
@@ -86,12 +90,23 @@ func init() {
 		if err != nil {
 			return nil, fmt.Errorf("error parsing raw config => %v", err)
 		}
-		// 1. FD释放（close_inactive）配置不能超过5分钟
+
+		// FD释放（close_inactive）配置不能超过5分钟
 		if logConfig.CloseInactive > 5*time.Minute {
 			defaultConfig["close_inactive"] = 5 * time.Minute
 		}
-		// 2. CleanInactive 必须大于 IgnoreOlder + scan_frequency
-		defaultConfig["clean_inactive"] = logConfig.IgnoreOlder + 1*time.Hour
+
+		if logConfig.CleanInactive > 0 {
+			// 2. 如果配置了CleanInactive，那么必须大于 IgnoreOlder + ScanFrequency
+			if logConfig.CleanInactive < logConfig.IgnoreOlder + logConfig.ScanFrequency {
+				defaultConfig["clean_inactive"] = logConfig.IgnoreOlder + logConfig.ScanFrequency + 1*time.Hour
+			}
+		} else {
+			// 如果没有配置CleanInactive，那么给一个默认值，半年
+			// 对于长时间未写的文件，采集进度保留半年，半年后如果再次写入会出现将整个文件重新读取现象。
+			// 可适当调大，但是更建议对业务日志本身做处理，增加轮转机制，而不是一直写同一个日志文件
+			defaultConfig["clean_inactive"] = logConfig.IgnoreOlder + logConfig.ScanFrequency + 180 * 24 * time.Hour
+		}
 
 		err = rawConfig.Merge(defaultConfig)
 		if err != nil {
