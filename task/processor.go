@@ -102,7 +102,8 @@ func (client *Processors) filter(event *beat.Event) *beat.Event {
 	for _, f := range client.taskConfig.Filters {
 		access := true
 		for _, condition := range f.Conditions {
-			if condition.Index == -1 {
+			// 匹配第n列，如果n小于等于0，则变更为整个字符串包含
+			if condition.Index <= 0 {
 				if !strings.Contains(text, condition.Key) {
 					access = false
 					break
