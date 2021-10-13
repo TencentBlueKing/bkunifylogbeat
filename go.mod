@@ -5,6 +5,7 @@ go 1.14
 require (
 	github.com/StackExchange/wmi v1.2.1 // indirect
 	github.com/TencentBlueKing/collector-go-sdk/v2 v2.0.0
+	github.com/andrewkroh/sys v0.0.0-20151128191922-287798fe3e43 // indirect
 	github.com/dustin/go-humanize v1.0.0
 	github.com/elastic/beats v7.1.1+incompatible
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e
