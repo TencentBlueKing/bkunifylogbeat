@@ -29,12 +29,11 @@ import (
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/libbeat/logp"
 	"github.com/elastic/beats/winlogbeat/eventlog"
+	"github.com/elastic/beats/winlogbeat/sys"
 	"reflect"
 	"strconv"
 	"strings"
 	"syscall"
-
-	"github.com/elastic/beats/winlogbeat/sys"
 )
 
 // ToMapStr returns a new MapStr containing the data from this Record.
@@ -59,7 +58,7 @@ func ToEvent(e eventlog.Record) beat.Event {
 	addOptional(win, "task", e.Task)
 	addOptional(win, "user_time", e.Execution.UserTime)
 	addOptional(win, "version", e.Version)
-	addOptional(win, "event_created", e.TimeCreated.SystemTime)
+	addOptional(win, "time_created", e.TimeCreated.SystemTime)
 	// Correlation
 	addOptional(win, "activity_id", e.Correlation.ActivityID)
 	addOptional(win, "related_activity_id", e.Correlation.RelatedActivityID)
@@ -78,12 +77,7 @@ func ToEvent(e eventlog.Record) beat.Event {
 	userData := addPairs(win, "user_data", e.UserData.Pairs)
 	addOptional(userData, "xml_name", e.UserData.Name.Local)
 
-	// ECS data
-	addOptional(win, "event_kind", "event")
-	addOptional(win, "event_code", e.EventIdentifier.ID)
-	addOptional(win, "event_action", e.Task)
-
-	addOptional(win, "log_level", strings.ToLower(e.Level))
+	addOptional(win, "level", strings.ToLower(e.Level))
 	addOptional(win, "data", sys.RemoveWindowsLineEndings(e.Message))
 	// Errors
 	addOptional(win, "error_code", e.RenderErrorCode)
