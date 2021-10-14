@@ -149,7 +149,7 @@ func (e *eventLogger) run(
 
 		for _, lr := range records {
 			data := util.NewData()
-			data.Event = lr.ToEvent()
+			data.Event = ToEvent(lr)
 			outlet.OnEvent(data)
 		}
 	}
