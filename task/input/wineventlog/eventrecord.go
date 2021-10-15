@@ -72,10 +72,18 @@ func ToEvent(e eventlog.Record) beat.Event {
 		addOptional(win, "user_domain", e.User.Domain)
 		addOptional(win, "user_type", e.User.Type.String())
 	}
+	if len(e.EventData.Pairs) == 0 {
+		_, _ = win.Put("event_data", make(map[string]string))
+	} else {
+		addPairs(win, "event_data", e.EventData.Pairs)
+	}
 
-	addPairs(win, "event_data", e.EventData.Pairs)
-	userData := addPairs(win, "user_data", e.UserData.Pairs)
-	addOptional(userData, "xml_name", e.UserData.Name.Local)
+	if len(e.UserData.Pairs) == 0 {
+		_, _ = win.Put("user_data", make(map[string]string))
+	} else {
+		userData := addPairs(win, "user_data", e.UserData.Pairs)
+		addOptional(userData, "xml_name", e.UserData.Name.Local)
+	}
 
 	addOptional(win, "level", strings.ToLower(e.Level))
 	addOptional(win, "data", sys.RemoveWindowsLineEndings(e.Message))
