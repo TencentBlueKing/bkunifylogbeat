@@ -30,6 +30,7 @@ import (
 	"time"
 
 	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
+	"github.com/TencentBlueKing/bkunifylogbeat/task/input/wineventlog"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/bkmonitoring"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
 	bkStorage "github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/storage"
@@ -181,11 +182,15 @@ func (r *Registrar) run() {
 
 // onEvents processes events received from the publisher pipeline
 func (r *Registrar) onEvents(states []file.State) {
-	logp.L.Debugf("registrar", "Registrar state updates processed. Count: %d", len(states))
+	logp.L.Debugf("registrar state updates processed. Count: %d", len(states))
 
 	ts := time.Now()
-	for i := range states {
-		r.states.UpdateWithTs(states[i], ts)
+	for _, s := range states {
+		if s.Type == wineventlog.WinLogFileStateType {
+			r.states.UpdateWithTs(s, s.Timestamp)
+		} else {
+			r.states.UpdateWithTs(s, ts)
+		}
 	}
 }
 

@@ -24,7 +24,9 @@ package wineventlog
 
 import (
 	"github.com/elastic/beats/filebeat/channel"
+	"github.com/elastic/beats/filebeat/input/file"
 	"github.com/elastic/beats/filebeat/util"
+	"strconv"
 	"time"
 
 	"github.com/elastic/beats/libbeat/beat"
@@ -34,6 +36,10 @@ import (
 
 	"github.com/elastic/beats/winlogbeat/checkpoint"
 	"github.com/elastic/beats/winlogbeat/eventlog"
+)
+
+const (
+	WinLogFileStateType = "winlog"
 )
 
 type eventLogger struct {
@@ -91,23 +97,6 @@ func (e *eventLogger) run(
 ) {
 	api := e.source
 
-	// Initialize per event log metrics.
-	//initMetrics(api.Name())  // TODO 增加指标监控
-
-	//client, err := e.connect(pipeline)
-	//if err != nil {
-	//	logp.Warn("EventLog[%s] Pipeline error. Failed to connect to publisher pipeline",
-	//		api.Name())
-	//	return
-	//}
-	//
-	//// close client on function return or when `done` is triggered (unblock client)
-	//defer client.Close()
-	//go func() {
-	//	<-done
-	//	client.Close()
-	//}()
-
 	err := api.Open(state)
 	if err != nil {
 		logp.Warn("EventLog[%s] Open() error. No events will be read from "+
@@ -149,8 +138,37 @@ func (e *eventLogger) run(
 
 		for _, lr := range records {
 			data := util.NewData()
+
+			data.SetState(WinLogStateToFileState(lr.Offset))
 			data.Event = ToEvent(lr)
 			outlet.OnEvent(data)
 		}
+	}
+}
+
+// WinLogStateToFileState
+func WinLogStateToFileState(cs checkpoint.EventLogState) file.State {
+	return file.State{
+		Id:        cs.Name,
+		Type:      WinLogFileStateType,
+		Source:    cs.Name,
+		Timestamp: cs.Timestamp,
+		TTL:       -1,
+		Finished:  false,
+		Meta: map[string]string{
+			"RecordNumber": strconv.FormatUint(cs.RecordNumber, 10),
+			"Bookmark":     cs.Bookmark,
+		},
+	}
+}
+
+// FileStateToWinLogState
+func FileStateToWinLogState(st file.State) checkpoint.EventLogState {
+	recordNumber, _ := strconv.ParseUint(st.Meta["RecordNumber"], 10, 64)
+	return checkpoint.EventLogState{
+		Name:         st.Source,
+		Timestamp:    st.Timestamp,
+		RecordNumber: recordNumber,
+		Bookmark:     st.Meta["Bookmark"],
 	}
 }

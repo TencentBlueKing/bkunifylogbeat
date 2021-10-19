@@ -33,7 +33,6 @@ import (
 	"github.com/elastic/beats/winlogbeat/checkpoint"
 	"github.com/elastic/beats/winlogbeat/eventlog"
 	"sync"
-	"time"
 )
 
 func init() {
@@ -55,10 +54,10 @@ type Input struct {
 	cfg      *common.Config
 	registry *harvester.Registry
 
-	done       chan struct{}          // Channel to initiate shutdown of main event loop.
-	pipeline   beat.Pipeline          // Interface to publish event.
-	checkpoint *checkpoint.Checkpoint // Persists event log state to disk.
-	wg         sync.WaitGroup
+	done     chan struct{}                       // Channel to initiate shutdown of main event loop.
+	pipeline beat.Pipeline                       // Interface to publish event.
+	states   map[string]checkpoint.EventLogState // win event log states
+	wg       sync.WaitGroup
 }
 
 // Reload runs the input
@@ -80,10 +79,8 @@ func (p *Input) Run() {
 	defer p.mutex.Unlock()
 
 	if !p.started {
-		persistedState := p.checkpoint.States()
-
 		for _, log := range p.eventLogs {
-			state, _ := persistedState[log.source.Name()]
+			state, _ := p.states[log.source.Name()]
 
 			// Start a goroutine for each event log.
 			p.wg.Add(1)
@@ -102,7 +99,6 @@ func (p *Input) Stop() {
 		close(p.done)
 	}
 	p.wg.Wait()
-	p.checkpoint.Shutdown()
 
 	p.registry.Stop()
 	_ = p.outlet.Close()
@@ -152,9 +148,11 @@ func NewInput(
 		eventLogs = append(eventLogs, logger)
 	}
 
-	cp, err := checkpoint.NewCheckpoint(config.RegistryFile, 10, 5*time.Second)
-	if err != nil {
-		return nil, err
+	winStates := make(map[string]checkpoint.EventLogState)
+	for _, s := range context.States {
+		if s.Type == WinLogFileStateType {
+			winStates[s.Source] = FileStateToWinLogState(s)
+		}
 	}
 
 	p := &Input{
@@ -166,8 +164,7 @@ func NewInput(
 		config:   config,
 		cfg:      cfg,
 		registry: harvester.NewRegistry(),
-
-		checkpoint: cp,
+		states:   winStates,
 	}
 
 	return p, nil
