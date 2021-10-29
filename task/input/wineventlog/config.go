@@ -20,20 +20,20 @@
 // WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 // SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package include
+package wineventlog
 
-import (
-	// input type
-	_ "github.com/elastic/beats/filebeat/input/log"
-	_ "github.com/elastic/beats/filebeat/input/stdin"
-	_ "github.com/elastic/beats/filebeat/input/syslog"
-	_ "github.com/elastic/beats/filebeat/input/udp"
+import "github.com/elastic/beats/libbeat/common"
 
-	_ "github.com/TencentBlueKing/bkunifylogbeat/task/input/wineventlog"
-
-	// input config
-	_ "github.com/TencentBlueKing/bkunifylogbeat/config/input"
-
-	// formatter
-	_ "github.com/TencentBlueKing/bkunifylogbeat/task/formatter"
+const (
+	// DefaultRegistryFile specifies the default filename of the registry file.
+	DefaultRegistryFile = "bkunifylogbeat_winlog.yml"
 )
+
+var defaultConfig = config{
+	RegistryFile: DefaultRegistryFile,
+}
+
+type config struct {
+	EventLogs    []*common.Config `config:"event_logs"`
+	RegistryFile string           `config:"registry_file"`
+}

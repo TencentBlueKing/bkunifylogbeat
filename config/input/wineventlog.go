@@ -20,20 +20,33 @@
 // WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 // SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package include
+package input
 
 import (
-	// input type
-	_ "github.com/elastic/beats/filebeat/input/log"
-	_ "github.com/elastic/beats/filebeat/input/stdin"
-	_ "github.com/elastic/beats/filebeat/input/syslog"
-	_ "github.com/elastic/beats/filebeat/input/udp"
-
-	_ "github.com/TencentBlueKing/bkunifylogbeat/task/input/wineventlog"
-
-	// input config
-	_ "github.com/TencentBlueKing/bkunifylogbeat/config/input"
-
-	// formatter
-	_ "github.com/TencentBlueKing/bkunifylogbeat/task/formatter"
+	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
+	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
+	"github.com/elastic/beats/libbeat/common"
+	"time"
 )
+
+// WinEventLogConfig: window event log collect config
+type WinEventLogConfig struct {
+	EventLogs    []*common.Config `config:"event_logs"`
+	RegistryFile string           `config:"registry_file"`
+}
+
+func init() {
+	err := cfg.Register("winlog", func(rawConfig *beat.Config) (*beat.Config, error) {
+		defaultConfig := beat.MapStr{}
+		defaultConfig["scan_frequency"] = 1 * time.Hour
+		err := rawConfig.Merge(defaultConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		return rawConfig, nil
+	})
+	if err != nil {
+		panic(err)
+	}
+}
