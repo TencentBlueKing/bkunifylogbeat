@@ -100,10 +100,15 @@ func (client *Sender) Start() error {
 
 // OnEvent获取采集事件
 func (client *Sender) OnEvent(data *util.Data) bool {
-	client.input <- data
-	client.senderReceive.Add(1)
-	senderReceived.Add(1)
-	return true
+	select {
+	case <-client.taskDone:
+		logp.L.Info("task is done. return OnEvent")
+		return false
+	case client.input <- data:
+		client.senderReceive.Add(1)
+		senderReceived.Add(1)
+		return true
+	}
 }
 
 func (client *Sender) run() error {
