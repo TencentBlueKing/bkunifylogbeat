@@ -23,6 +23,7 @@
 package utils
 
 import (
+	"fmt"
 	"time"
 
 	bkcommon "github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/common"
@@ -30,6 +31,8 @@ import (
 
 //GetDateTime: 获取系统当前时间
 func GetDateTime() (localTime string, utcTime string, unixTime int64) {
+	fmt.Println(time.Now())
+	fmt.Println(time.Now().Zone())
 	localTime = time.Now().Format(bkcommon.TimeFormat)
 	utcTime = time.Now().UTC().Format(bkcommon.TimeFormat)
 	unixTime = time.Now().Unix()
