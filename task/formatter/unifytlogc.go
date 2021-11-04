@@ -90,6 +90,7 @@ func (f unifytlogcFormatter) Format(events []*util.Data) beat.MapStr {
 		"time":        timestamp,
 	}
 
+	fmt.Println(data)
 	hasEvent := false
 
 	var texts []string
