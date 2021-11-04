@@ -30,9 +30,8 @@ import (
 
 //GetDateTime: 获取系统当前时间
 func GetDateTime() (localTime string, utcTime string, unixTime int64) {
-	t := time.Now()
-	localTime = t.Format(bkcommon.TimeFormat)
-	utcTime = t.UTC().Format(bkcommon.TimeFormat)
-	unixTime = t.Unix()
+	localTime = time.Now().Format(bkcommon.TimeFormat)
+	utcTime = time.Now().UTC().Format(bkcommon.TimeFormat)
+	unixTime = time.Now().Unix()
 	return
 }
