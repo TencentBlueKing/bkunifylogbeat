@@ -31,6 +31,10 @@ bkunifylogbeat.local:
     input: tail
     path:
       - "/var/log/*.log"
+      - "/data/bkee/logs/*.log"
+    # 移除路径前缀
+    remove_path_prefix: '/data/bkee'
+    is_container_std: false
     exclude_files: [".gz$", ".tar$"]
     encoding: "utf-8"
     package: true

@@ -73,8 +73,13 @@ type TaskConfig struct {
 	CanPackage   bool        `config:"package"`
 	PackageCount int         `config:"package_count"`
 	ExtMeta      interface{} `config:"ext_meta"`
-	OutputFormat string      `config:"output_format"`
-	RawConfig    *beat.Config
+
+	// Output
+	RemovePathPrefix string `config:"remove_path_prefix"` // 去除路径前缀
+	IsContainerStd   bool   `config:"is_container_std"`   // 是否为容器标准输出日志
+	OutputFormat     string `config:"output_format"`      // 输出格式，为了兼容老版采集器的输出格式
+
+	RawConfig *beat.Config
 }
 
 // 创建采集任务配置
