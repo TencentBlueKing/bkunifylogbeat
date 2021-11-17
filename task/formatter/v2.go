@@ -25,12 +25,21 @@
 package formatter
 
 import (
+	"encoding/json"
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/task"
 	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
 	"github.com/elastic/beats/filebeat/util"
+	"github.com/elastic/beats/libbeat/logp"
+	"strings"
 )
+
+type ContainerStdoutFields struct {
+	Log    string `json:"log"`
+	Stream string `json:"stream"`
+	Time   string `json:"time"`
+}
 
 type v2Formatter struct {
 	taskConfig *config.TaskConfig
@@ -53,9 +62,13 @@ func (f v2Formatter) Format(events []*util.Data) beat.MapStr {
 	datetime, utcTime, timestamp = utils.GetDateTime()
 
 	lastState := events[len(events)-1].GetState()
+	filename := lastState.Source
+	if len(f.taskConfig.RemovePathPrefix) > 0 {
+		filename = strings.TrimPrefix(filename, f.taskConfig.RemovePathPrefix)
+	}
 	data := beat.MapStr{
 		"dataid":   f.taskConfig.DataID,
-		"filename": lastState.Source,
+		"filename": filename,
 		"datetime": datetime,
 		"utctime":  utcTime,
 		"time":     timestamp,
@@ -71,6 +84,19 @@ func (f v2Formatter) Format(events []*util.Data) beat.MapStr {
 		}
 		hasEvent = true
 		item["iterationindex"] = index
+		if f.taskConfig.IsContainerStd {
+			content, ok := item["data"].(string)
+			if ok {
+				jsonContent := ContainerStdoutFields{}
+				e := json.Unmarshal([]byte(content), &jsonContent)
+				if e != nil {
+					logp.Err("output format error, container stdout no json format, data(%s)", content)
+				}
+				item["data"] = jsonContent.Log
+				item["stream"] = jsonContent.Stream
+				item["log_time"] = jsonContent.Time
+			}
+		}
 		items = append(items, item)
 	}
 	// 仅需要更新采集状态的事件数
