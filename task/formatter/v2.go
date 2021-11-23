@@ -109,7 +109,7 @@ func (f v2Formatter) Format(events []*util.Data) beat.MapStr {
 	if f.taskConfig.ExtMeta != nil {
 		data["ext"] = f.taskConfig.ExtMeta
 	} else {
-		data["ext"] = ""
+		data["ext"] = map[string]interface{}{}
 	}
 	return data
 }
