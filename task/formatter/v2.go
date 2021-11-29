@@ -30,8 +30,8 @@ import (
 	"github.com/TencentBlueKing/bkunifylogbeat/task"
 	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
+	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
 	"github.com/elastic/beats/filebeat/util"
-	"github.com/elastic/beats/libbeat/logp"
 	"strings"
 )
 
@@ -45,7 +45,7 @@ type v2Formatter struct {
 	taskConfig *config.TaskConfig
 }
 
-//NewV2Formatter: bkunifylogbeat日志采集输出格式
+// NewV2Formatter bkunifylogbeat日志采集输出格式
 func NewV2Formatter(config *config.TaskConfig) (*v2Formatter, error) {
 	f := &v2Formatter{
 		taskConfig: config,
@@ -53,8 +53,73 @@ func NewV2Formatter(config *config.TaskConfig) (*v2Formatter, error) {
 	return f, nil
 }
 
-//Format: 最新格式兼容
+// syslogFormatter 兼容syslog数据格式
+func syslogFormatter(events []*util.Data) []*util.Data {
+	for _, event := range events {
+		fields := event.Event.Fields
+		hasKey, err := fields.HasKey("syslog")
+		if err != nil {
+			continue
+		}
+
+		// 校验syslog是否满足rfc3164格式
+		logData := beat.MapStr{}
+		if hasKey {
+			logData["message"] = fields["message"]
+
+			// source ip and port info
+			address := fields["log"].(beat.MapStr)["source"].(beat.MapStr)["address"].(string)
+			arr := strings.Split(address, ":")
+			if len(arr) > 0 {
+				logData["log_source_ip"] = arr[0]
+			} else {
+				logData["log_source_ip"] = ""
+			}
+			if len(arr) > 1 {
+				logData["log_source_port"] = arr[1]
+			} else {
+				logData["log_source_port"] = ""
+			}
+
+			// host info
+			hostName, err := fields.GetValue("hostname")
+			if err == nil {
+				logData["hostname"] = hostName
+			} else {
+				logData["hostname"] = ""
+			}
+
+			// syslog、event、process info
+			logData["syslog"] = fields["syslog"]
+			logData["event"] = fields["event"]
+			logData["process"] = fields["process"]
+		} else {
+			logData["message"] = fields["message"]
+		}
+
+		// 适配日志平台，将json转化成str
+		jf, err := json.Marshal(logData)
+		if err != nil {
+			logp.L.Errorf("Error starting the server, %v", err)
+			continue
+		}
+		sf := string(jf)
+
+		event.Event.Fields = beat.MapStr{
+			"data": sf,
+		}
+	}
+	return events
+}
+
+// Format 最新格式兼容
 func (f v2Formatter) Format(events []*util.Data) beat.MapStr {
+
+	// 兼容syslog采集上报数据
+	if f.taskConfig.Type == "syslog" {
+		events = syslogFormatter(events)
+	}
+
 	var (
 		datetime, utcTime string
 		timestamp         int64
@@ -90,7 +155,7 @@ func (f v2Formatter) Format(events []*util.Data) beat.MapStr {
 				jsonContent := ContainerStdoutFields{}
 				e := json.Unmarshal([]byte(content), &jsonContent)
 				if e != nil {
-					logp.Err("output format error, container stdout no json format, data(%s)", content)
+					logp.L.Errorf("output format error, container stdout no json format, data(%v)", content)
 				}
 				item["data"] = jsonContent.Log
 				item["stream"] = jsonContent.Stream
