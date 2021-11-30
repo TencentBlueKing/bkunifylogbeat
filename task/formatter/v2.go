@@ -57,57 +57,12 @@ func NewV2Formatter(config *config.TaskConfig) (*v2Formatter, error) {
 func syslogFormatter(events []*util.Data) []*util.Data {
 	for _, event := range events {
 		fields := event.Event.Fields
-		hasKey, err := fields.HasKey("syslog")
+		fields["data"] = fields["message"]
+		err := fields.Delete("message")
 		if err != nil {
-			continue
+			logp.L.Errorf("key not found: %v", err)
 		}
-
-		// 校验syslog是否满足rfc3164格式
-		logData := beat.MapStr{}
-		if hasKey {
-			logData["message"] = fields["message"]
-
-			// source ip and port info
-			address := fields["log"].(beat.MapStr)["source"].(beat.MapStr)["address"].(string)
-			arr := strings.Split(address, ":")
-			if len(arr) > 0 {
-				logData["log_source_ip"] = arr[0]
-			} else {
-				logData["log_source_ip"] = ""
-			}
-			if len(arr) > 1 {
-				logData["log_source_port"] = arr[1]
-			} else {
-				logData["log_source_port"] = ""
-			}
-
-			// host info
-			hostName, err := fields.GetValue("hostname")
-			if err == nil {
-				logData["hostname"] = hostName
-			} else {
-				logData["hostname"] = ""
-			}
-
-			// syslog、event、process info
-			logData["syslog"] = fields["syslog"]
-			logData["event"] = fields["event"]
-			logData["process"] = fields["process"]
-		} else {
-			logData["message"] = fields["message"]
-		}
-
-		// 适配日志平台，将json转化成str
-		jf, err := json.Marshal(logData)
-		if err != nil {
-			logp.L.Errorf("Error starting the server, %v", err)
-			continue
-		}
-		sf := string(jf)
-
-		event.Event.Fields = beat.MapStr{
-			"data": sf,
-		}
+		event.Event.Fields = fields
 	}
 	return events
 }
