@@ -29,6 +29,6 @@ import (
 	"github.com/shirou/gopsutil/process"
 )
 
-func (c *CPULimit) GetCpuTimes(p *process.Process) *cpu.TimesStat {
+func (c *CPULimit) GetCpuTimes(p *process.Process) (*cpu.TimesStat, error) {
 	return p.Times()
 }
