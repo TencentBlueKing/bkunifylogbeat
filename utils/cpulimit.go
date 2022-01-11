@@ -96,7 +96,7 @@ func (c *CPULimit) Start() {
 		defer ticker.Stop()
 
 		lastCPUTime := time.Now()
-		lastCPUTimes, err := p.Times()
+		lastCPUTimes, err := c.GetCpuTimes(p)
 		if err != nil {
 			logp.L.Errorf("cpu limit, get cpu stat err=>(%+v)", err)
 			return
@@ -108,7 +108,7 @@ func (c *CPULimit) Start() {
 				return
 			case <-ticker.C:
 				now := time.Now()
-				curCpuTimes, _ := p.Times()
+				curCpuTimes, _ := c.GetCpuTimes(p)
 				delta := now.Sub(lastCPUTime).Seconds()
 				deltaCPUTime := curCpuTimes.Total() - lastCPUTimes.Total()
 				if deltaCPUTime > timeToRunSeconds-tickInterval {
