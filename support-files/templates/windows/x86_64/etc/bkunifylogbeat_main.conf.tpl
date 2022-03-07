@@ -31,3 +31,5 @@ bkunifylogbeat.eventdataid: -1
 bkunifylogbeat.multi_config:
   - path: {{ plugin_path.subconfig_path }}
     file_pattern: "*.conf"
+  - path: {{ plugin_path.subconfig_path }}\bcs
+    file_pattern: "*.conf"
