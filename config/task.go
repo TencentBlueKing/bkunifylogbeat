@@ -125,8 +125,8 @@ func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
 			sort.Sort(ConditionSortByIndex(f.Conditions))
 			// uniq filter index
 			lastIndex := 0
-			for _, condition := range f.Conditions {
-				if lastIndex == condition.Index {
+			for idx, condition := range f.Conditions {
+				if idx != 0 && lastIndex == condition.Index {
 					return nil, fmt.Errorf("filter has duplicate index")
 				}
 				lastIndex = condition.Index
