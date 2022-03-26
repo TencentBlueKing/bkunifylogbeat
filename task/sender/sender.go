@@ -147,8 +147,6 @@ func (client *Sender) run() error {
 			}
 		}
 	}
-
-	return nil
 }
 
 // Wait
@@ -165,7 +163,8 @@ func (client *Sender) cacheSend(event *util.Data) error {
 	source := event.GetState().Source
 
 	if !client.taskConfig.CanPackage {
-		return client.send([]*util.Data{event})
+		client.send([]*util.Data{event})
+		return nil
 	}
 
 	buffer, exist := client.cache[source]
@@ -198,9 +197,9 @@ func (client *Sender) cacheSend(event *util.Data) error {
 }
 
 // send: 调用beat.SendEvent发送打包后的采集事件
-func (client *Sender) send(events []*util.Data) error {
+func (client *Sender) send(events []*util.Data) {
 	if len(events) == 0 {
-		return nil
+		return
 	}
 
 	lastState := events[len(events)-1].GetState()
@@ -213,7 +212,7 @@ func (client *Sender) send(events []*util.Data) error {
 			Fields:  nil,
 			Private: lastState,
 		})
-		return nil
+		return
 	}
 
 	// send data
@@ -224,5 +223,4 @@ func (client *Sender) send(events []*util.Data) error {
 	// 发送到pipeline的数量
 	client.senderSendTotal.Add(1)
 	senderSendTotal.Add(1)
-	return nil
 }

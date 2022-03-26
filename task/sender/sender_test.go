@@ -50,7 +50,7 @@ var fileTextNull string = ""
 var packageCount int = 10
 var outputFormat = "v2"
 
-func mockPublisher(event beat.Event) bool {
+func mockPublisher(beat.Event) bool {
 	sendNums += 1
 	return true
 }
@@ -94,12 +94,12 @@ func mockSender(taskDone chan struct{}, canPackage bool, packageCount int) (*Sen
 	if err != nil {
 		return nil, err
 	}
-	config, err := config.NewTaskConfig(vars)
+	taskConfig, err := config.NewTaskConfig(vars)
 	if err != nil {
 		return nil, err
 	}
 
-	sender, err := NewSender(config, taskDone, mockPublisher)
+	sender, err := NewSender(taskConfig, taskDone, mockPublisher)
 	if err != nil {
 		return nil, err
 	}

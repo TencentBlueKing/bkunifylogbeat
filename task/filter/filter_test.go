@@ -36,9 +36,9 @@ func TestFilter(t *testing.T) {
 		"dataid":    "999990001",
 		"delimiter": "|",
 		"filters": []cfg.FilterConfig{
-			cfg.FilterConfig{
+			{
 				Conditions: []cfg.ConditionConfig{
-					cfg.ConditionConfig{
+					{
 						Index: -1,
 						Key:   "test",
 						Op:    "=",
@@ -65,14 +65,14 @@ func TestFilter(t *testing.T) {
 
 	//case 3: 组合条件上报
 	vars["filters"] = []cfg.FilterConfig{
-		cfg.FilterConfig{
+		{
 			Conditions: []cfg.ConditionConfig{
-				cfg.ConditionConfig{
+				{
 					Index: 1,
 					Key:   "debug",
 					Op:    "!=",
 				},
-				cfg.ConditionConfig{
+				{
 					Index: 2,
 					Key:   "test",
 					Op:    "=",
