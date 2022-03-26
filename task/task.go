@@ -28,17 +28,21 @@ package task
 
 import (
 	"fmt"
-	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 	"runtime"
 	"sync"
 	"time"
 
 	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
+	"github.com/TencentBlueKing/bkunifylogbeat/task/filter"
+	"github.com/TencentBlueKing/bkunifylogbeat/task/input"
+	"github.com/TencentBlueKing/bkunifylogbeat/task/processor"
+	"github.com/TencentBlueKing/bkunifylogbeat/task/sender"
+	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/bkmonitoring"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
+
 	"github.com/elastic/beats/filebeat/channel"
-	"github.com/elastic/beats/filebeat/input"
 	"github.com/elastic/beats/filebeat/input/file"
 	"github.com/elastic/beats/filebeat/util"
 	"github.com/elastic/beats/libbeat/common"
@@ -59,6 +63,7 @@ var (
 	cpuLimiter          *utils.CPULimit // CPU使用率限制
 )
 
+// SetResourceLimit 在一定程度上限制CPU使用
 func SetResourceLimit(maxCpuLimit, checkTimes int) {
 	numCPU := runtime.NumCPU()
 	// 在docker富容器中 并且 开启了速率限制
@@ -87,16 +92,20 @@ func SetResourceLimit(maxCpuLimit, checkTimes int) {
 	}
 }
 
-// Task： 采集任务具体实现，负责filebeat采集事件处理、过滤、打包，并发送到采集框架
+// Task 采集任务具体实现，负责filebeat采集事件处理、过滤、打包，并发送到采集框架
 type Task struct {
-	ID               string
-	config           *cfg.TaskConfig
-	beatDone         chan struct{}
-	runner           *input.Runner
-	processors       *Processors
-	sender           *Sender
-	done             chan struct{}
-	wg               sync.WaitGroup
+	ID       string
+	config   *cfg.TaskConfig
+	beatDone chan struct{}
+
+	input      *input.Input
+	filters    *filter.Filters
+	processors *processor.Processors
+	sender     *sender.Sender
+
+	done chan struct{}
+	wg   sync.WaitGroup
+
 	crawlerReceived  *monitoring.Int //state事件
 	crawlerState     *monitoring.Int //state事件
 	crawlerSendTotal *monitoring.Int //正常事件总数
@@ -123,16 +132,19 @@ func (task *Task) Start(lastStates []file.State) error {
 	var err error
 
 	// init sender
-	sender, err := NewSender(task.config, task.done, beat.SendEvent)
+	s, err := sender.NewSender(task.config, task.done, beat.SendEvent)
 	if err != nil {
 		senderFailed.Add(1)
 		return fmt.Errorf("[%s] error while initializing sender: %s", task.ID, err)
 	}
-	task.sender = sender
+	task.sender = s
 	task.sender.Start()
 
+	// init filters
+	task.filters = filter.NewFilters(task.config)
+
 	// init input processors
-	task.processors, err = NewProcessors(task.config)
+	task.processors, err = processor.NewProcessors(task.config)
 	if err != nil {
 		processorsFailed.Add(1)
 		return fmt.Errorf(": %s", err)
@@ -143,14 +155,14 @@ func (task *Task) Start(lastStates []file.State) error {
 		inputFailed.Add(1)
 		return fmt.Errorf("[%s] error while initializing input: %s", task.ID, err)
 	}
-	task.runner = p
-	task.runner.Start()
+	task.input = p
+	task.input.Start()
 	return nil
 }
 
 // Stop 负责停止采集任务实例，在Filebeat采集插件停止后退出
 func (task *Task) Stop() error {
-	task.runner.Stop()
+	task.input.Stop()
 	task.wg.Wait()
 	task.crawlerState.Set(0)
 	task.crawlerSendTotal.Set(0)
@@ -160,7 +172,7 @@ func (task *Task) Stop() error {
 
 // Reload 通知各采集模块针对重载操作进行适配
 func (task *Task) Reload() error {
-	task.runner.Reload()
+	task.input.Reload()
 	return nil
 }
 
@@ -176,7 +188,7 @@ func (task *Task) Done() <-chan struct{} {
 	return task.done
 }
 
-//处理input runner发送的事件
+// OnEvent 处理input runner发送的事件
 func (task *Task) OnEvent(data *util.Data) bool {
 	if data == nil {
 		logp.L.Errorf("task get event nil, task_id:%s", task.ID)
@@ -211,7 +223,11 @@ func (task *Task) OnEvent(data *util.Data) bool {
 			}
 		}
 
-		event = task.processors.Run(event)
+		event = task.filters.Run(event)
+		if event != nil {
+			event = task.processors.Run(event)
+		}
+
 		if event != nil {
 			//正常事件
 			task.crawlerSendTotal.Add(1)

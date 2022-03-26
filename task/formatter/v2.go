@@ -27,7 +27,6 @@ package formatter
 import (
 	"encoding/json"
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
-	"github.com/TencentBlueKing/bkunifylogbeat/task"
 	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
 	"github.com/elastic/beats/filebeat/util"
@@ -116,7 +115,7 @@ func (f v2Formatter) Format(events []*util.Data) beat.MapStr {
 
 func init() {
 	for _, name := range []string{"v2", "default"} {
-		err := task.FormatterRegister(name, func(config *config.TaskConfig) (task.Formatter, error) {
+		err := FormatterRegister(name, func(config *config.TaskConfig) (Formatter, error) {
 			return NewV2Formatter(config)
 		})
 		if err != nil {

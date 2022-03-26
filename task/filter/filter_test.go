@@ -20,7 +20,7 @@
 // WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 // SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package task
+package filter
 
 import (
 	"testing"
@@ -51,16 +51,16 @@ func TestFilter(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	processor, _ := NewProcessors(config)
+	filter := NewFilters(config)
 
 	//case 1: 必须包含test才会上报
 	data := tests.MockLogEvent("/test.log", "test")
-	event := processor.Run(&data.Event)
+	event := filter.Run(&data.Event)
 	assert.NotNil(t, event)
 
 	//case 2: 没有包含test所以会直接过滤
 	data = tests.MockLogEvent("/test.log", "data")
-	event = processor.Run(&data.Event)
+	event = filter.Run(&data.Event)
 	assert.Nil(t, event)
 
 	//case 3: 组合条件上报
@@ -84,18 +84,18 @@ func TestFilter(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	processor, _ = NewProcessors(config)
+	filter = NewFilters(config)
 
 	//case 3: 只上报非debug并且包含test的事件
 	data = tests.MockLogEvent("/test.log", "info|test")
-	event = processor.Run(&data.Event)
+	event = filter.Run(&data.Event)
 	assert.NotNil(t, event)
 
 	data = tests.MockLogEvent("/test.log", "debug|test")
-	event = processor.Run(&data.Event)
+	event = filter.Run(&data.Event)
 	assert.Nil(t, event)
 
 	data = tests.MockLogEvent("/test.log", "info|data")
-	event = processor.Run(&data.Event)
+	event = filter.Run(&data.Event)
 	assert.Nil(t, event)
 }

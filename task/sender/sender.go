@@ -20,10 +20,11 @@
 // WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 // SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package task
+package sender
 
 import (
 	"fmt"
+	"github.com/TencentBlueKing/bkunifylogbeat/task/formatter"
 	"sync"
 	"time"
 
@@ -51,7 +52,7 @@ type Sender struct {
 	input           chan *util.Data
 	wg              sync.WaitGroup
 	publisher       PublisherFunc
-	formatter       Formatter
+	formatter       formatter.Formatter
 	senderReceive   *monitoring.Int // 接收的事件数
 	senderSendTotal *monitoring.Int // 发送到pipeline的数量
 	senderState     *monitoring.Int // 仅需要更新采集状态的事件数(event.Field为空)
@@ -75,7 +76,7 @@ func NewSender(config *cfg.TaskConfig, taskDone chan struct{}, publisher Publish
 	if outputFormat == "" {
 		outputFormat = "default"
 	}
-	f, err := FindFormatterFactory(outputFormat)
+	f, err := formatter.FindFormatterFactory(outputFormat)
 	if err != nil {
 		return nil, err
 	}
@@ -92,13 +93,17 @@ func NewSender(config *cfg.TaskConfig, taskDone chan struct{}, publisher Publish
 }
 
 // Start 启动Sender实例
-func (client *Sender) Start() error {
+func (client *Sender) Start() {
 	logp.L.Infof("Starting sender, %s", client.String())
-	go client.run()
-	return nil
+	go func() {
+		err := client.run()
+		if err != nil {
+			logp.L.Errorf("sender(%s) err, %v", client.String(), err)
+		}
+	}()
 }
 
-// OnEvent获取采集事件
+// OnEvent 获取采集事件
 func (client *Sender) OnEvent(data *util.Data) bool {
 	select {
 	case <-client.taskDone:

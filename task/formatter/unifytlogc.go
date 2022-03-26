@@ -31,7 +31,6 @@ import (
 	"strings"
 
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
-	"github.com/TencentBlueKing/bkunifylogbeat/task"
 	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
 	"github.com/elastic/beats/filebeat/util"
@@ -150,7 +149,7 @@ func (f unifytlogcFormatter) getWorldID(path string) int64 {
 }
 
 func init() {
-	err := task.FormatterRegister("unifytlogc", func(config *config.TaskConfig) (task.Formatter, error) {
+	err := FormatterRegister("unifytlogc", func(config *config.TaskConfig) (Formatter, error) {
 		return NewUnifytlogcFormatter(config)
 	})
 	if err != nil {

@@ -20,9 +20,10 @@
 // WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 // SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package task
+package sender
 
 import (
+	"github.com/TencentBlueKing/bkunifylogbeat/task/formatter"
 	"testing"
 	"time"
 
@@ -75,7 +76,7 @@ func (f mockFormatter) Format(events []*util.Data) beat.MapStr {
 }
 
 func initMockFormatter() {
-	err := FormatterRegister(outputFormat, func(config *config.TaskConfig) (Formatter, error) {
+	err := formatter.FormatterRegister(outputFormat, func(config *config.TaskConfig) (formatter.Formatter, error) {
 		return NewMockFormatter(config)
 	})
 	if err != nil {

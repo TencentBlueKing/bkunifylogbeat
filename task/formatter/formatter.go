@@ -20,33 +20,47 @@
 // WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 // SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package task
+package formatter
 
-func equal(a, b string) bool {
-	return a == b
-}
+import (
+	"fmt"
 
-func notEqual(a, b string) bool {
-	return a != b
-}
-
-// sequence same with config define
-var operation = []func(a, b string) bool{
-	equal,
-	notEqual,
-}
-
-const (
-	EqualOperation = iota
-	NotEqualOperation
+	"github.com/TencentBlueKing/bkunifylogbeat/config"
+	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
+	"github.com/elastic/beats/filebeat/util"
 )
 
-func getOperation(op string) func(a, b string) bool {
-	if op == "=" {
-		return equal
-	} else if op == "!=" {
-		return notEqual
-	} else {
-		return nil
+// Formatter: 采集器事件包格式化接口, 根据任务配置返回相应的格式
+type Formatter interface {
+	Format([]*util.Data) beat.MapStr
+}
+
+// FormatterFactory is used by output plugins to build an output instance
+type FormatterFactory = func(config *config.TaskConfig) (Formatter, error)
+
+// FindFormatterFactory: 获取格式化器实例
+func FindFormatterFactory(name string) (FormatterFactory, error) {
+	f, exist := formatterRegistry[name]
+	if !exist {
+		return nil, fmt.Errorf("formatter is not exists")
 	}
+	return f, nil
+}
+
+var formatterRegistry = make(map[string]FormatterFactory)
+
+// FormatterRegister: 注册sender输出方法
+func FormatterRegister(name string, factory FormatterFactory) error {
+	if name == "" {
+		return fmt.Errorf("error registering input config: name cannot be empty")
+	}
+	if factory == nil {
+		return fmt.Errorf("error registering input config '%v': config cannot be empty", name)
+	}
+	if _, exists := formatterRegistry[name]; exists {
+		return fmt.Errorf("error registering input config '%v': already registered", name)
+	}
+
+	formatterRegistry[name] = factory
+	return nil
 }

@@ -20,47 +20,50 @@
 // WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 // SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package task
+package processor
 
 import (
 	"fmt"
-
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
-	"github.com/elastic/beats/filebeat/util"
+	"github.com/elastic/beats/libbeat/beat"
+	process "github.com/elastic/beats/libbeat/processors"
 )
 
-// Formatter: 采集器事件包格式化接口, 根据任务配置返回相应的格式
-type Formatter interface {
-	Format([]*util.Data) beat.MapStr
+// Processors : 兼容数据平台过滤规则
+type Processors struct {
+	taskConfig     *config.TaskConfig
+	processors     *process.Processors
+	filterMaxIndex int
 }
 
-// FormatterFactory is used by output plugins to build an output instance
-type FormatterFactory = func(config *config.TaskConfig) (Formatter, error)
-
-// FindFormatterFactory: 获取格式化器实例
-func FindFormatterFactory(name string) (FormatterFactory, error) {
-	f, exist := formatterRegistry[name]
-	if !exist {
-		return nil, fmt.Errorf("formatter is not exists")
+// NewProcessors : 兼容原采集器处理并复用filebeat.processors
+func NewProcessors(config *config.TaskConfig) (*Processors, error) {
+	processors := &Processors{
+		taskConfig: config,
 	}
-	return f, nil
+
+	var err error
+	if config.Processors != nil {
+		processors.processors, err = process.New(config.Processors)
+		if err != nil {
+			return nil, fmt.Errorf("create libbeat.processors faied, err=>%v", err)
+		}
+	}
+
+	return processors, nil
 }
 
-var formatterRegistry = make(map[string]FormatterFactory)
-
-// FormatterRegister: 注册sender输出方法
-func FormatterRegister(name string, factory FormatterFactory) error {
-	if name == "" {
-		return fmt.Errorf("error registering input config: name cannot be empty")
-	}
-	if factory == nil {
-		return fmt.Errorf("error registering input config '%v': config cannot be empty", name)
-	}
-	if _, exists := formatterRegistry[name]; exists {
-		return fmt.Errorf("error registering input config '%v': already registered", name)
+// Run : 处理采集事件
+func (client *Processors) Run(event *beat.Event) *beat.Event {
+	if event.Fields == nil {
+		return event
 	}
 
-	formatterRegistry[name] = factory
-	return nil
+	if client.processors != nil {
+		event := client.processors.Run(event)
+		if event == nil {
+			return nil
+		}
+	}
+	return event
 }
