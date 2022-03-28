@@ -26,14 +26,13 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
-
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
+	"github.com/elastic/beats/libbeat/common"
 )
 
-//HashRawConfig: 获取配置hash值
-func HashRawConfig(config *beat.Config) (error, string) {
+//HashRawConfig : 获取配置hash值
+func HashRawConfig(config *common.Config) (error, string) {
 	source := map[string]interface{}{}
-	config.Unpack(source)
+	_ = config.Unpack(source)
 	b1, err := json.Marshal(source)
 	if err != nil {
 		return err, ""

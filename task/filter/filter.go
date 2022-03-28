@@ -2,51 +2,158 @@ package filter
 
 import (
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
+	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
+	"github.com/TencentBlueKing/bkunifylogbeat/task/processor"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
+	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
+	"github.com/elastic/beats/filebeat/util"
 	"strings"
+	"sync"
+)
+
+var (
+	filterMaps = map[string]*Filters{}
+	mtx        sync.RWMutex
 )
 
 type Filters struct {
-	taskConfig *config.TaskConfig
+	*base.Node
 
+	Delimiter      string
 	filterMaxIndex int
+
+	taskConfigMaps map[string]*config.TaskConfig
 }
 
-// NewFilters 新建一个过滤器
-func NewFilters(config *config.TaskConfig) *Filters {
-	filters := &Filters{
-		taskConfig: config,
-	}
+// GetFilters get filter
+func GetFilters(taskCfg *config.TaskConfig, leafNode *base.Node) (*Filters, error) {
+	var (
+		ok  bool
+		fil *Filters
+	)
 
-	// Filter
-	if config.HasFilter {
-		for _, f := range config.Filters {
-			if len(f.Conditions) != 0 {
-				if filters.filterMaxIndex < f.Conditions[len(f.Conditions)-1].Index {
-					filters.filterMaxIndex = f.Conditions[len(f.Conditions)-1].Index
+	func() {
+		mtx.RLock()
+		defer mtx.RUnlock()
+		fil, ok = filterMaps[taskCfg.FilterID]
+	}()
+
+	if ok {
+		p, err := processor.GetProcessors(taskCfg, leafNode)
+		if err != nil {
+			return nil, err
+		}
+
+		fil.MergeFilterConfig(taskCfg)
+		fil.AddOutput(p.Node)
+		return fil, nil
+	}
+	return NewFilters(taskCfg, leafNode)
+}
+
+func NewFilters(taskCfg *config.TaskConfig, leafNode *base.Node) (*Filters, error) {
+	var err error
+	var fil = &Filters{
+		Node:      base.NewEmptyNode(taskCfg.FilterID),
+		Delimiter: taskCfg.Delimiter,
+
+		taskConfigMaps: map[string]*config.TaskConfig{},
+	}
+	fil.MergeFilterConfig(taskCfg)
+
+	p, err := processor.NewProcessors(taskCfg, leafNode)
+	if err != nil {
+		return nil, err
+	}
+	fil.AddOutput(p.Node)
+
+	go fil.Run()
+
+	logp.L.Infof("add filter(%s) to global filterMaps", fil.ID)
+	mtx.Lock()
+	defer mtx.Unlock()
+	filterMaps[taskCfg.FilterID] = fil
+	return fil, err
+}
+
+// RemoveFilter : 移除全局缓存
+func RemoveFilter(id string) {
+	logp.L.Infof("remove filter(%s) in global filterMaps", id)
+	mtx.Lock()
+	defer mtx.Unlock()
+	delete(filterMaps, id)
+}
+
+func (f *Filters) MergeFilterConfig(taskCfg *config.TaskConfig) {
+	if taskCfg.HasFilter {
+		for _, filConfig := range taskCfg.Filters {
+			if len(filConfig.Conditions) != 0 {
+				maxIndex := filConfig.Conditions[len(filConfig.Conditions)-1].Index
+				if f.filterMaxIndex < maxIndex {
+					f.filterMaxIndex = maxIndex
 				}
 			}
 		}
 	}
-
-	return filters
+	f.taskConfigMaps[taskCfg.ID] = taskCfg
 }
 
-// Run 过滤数据
-func (f *Filters) Run(event *beat.Event) *beat.Event {
-	if !f.taskConfig.HasFilter {
+func (f *Filters) Run() {
+	defer RemoveFilter(f.ID)
+	for {
+		select {
+		case <-f.End:
+			// node is done
+			return
+		case e := <-f.In:
+			data := e.(*util.Data)
+			event := &data.Event
+
+			// index为N时，数组切分最少需要分成N+1段
+			var text string
+			var ok bool
+			text, ok = event.Fields["data"].(string)
+			if !ok || f.Delimiter == "" {
+				for _, out := range f.Outs {
+					select {
+					case <-f.End:
+						logp.L.Infof("node filter(%s) is done", f.ID)
+						return
+					case out <- data:
+					}
+				}
+				break
+			}
+
+			words := strings.SplitN(text, f.Delimiter, f.filterMaxIndex+1)
+			for _, taskConfig := range f.taskConfigMaps {
+				event := f.Handle(words, text, taskConfig, event)
+				if event == nil {
+					continue
+				}
+
+				out, ok := f.Outs[taskConfig.ProcessorID]
+				if ok {
+					select {
+					case <-f.End:
+						logp.L.Infof("node filter(%s) is done", f.ID)
+						return
+					case out <- data:
+					}
+				}
+			}
+
+		}
+	}
+}
+
+// Handle 过滤数据
+func (f *Filters) Handle(words []string, text string, taskConfig *config.TaskConfig, event *beat.Event) *beat.Event {
+	if !taskConfig.HasFilter {
 		return event
 	}
 
-	// index为N时，数组切分最少需要分成N+1段
-	var text string
-	var ok bool
-	if text, ok = event.Fields["data"].(string); !ok {
-		return event
-	}
-	words := strings.SplitN(text, f.taskConfig.Delimiter, f.filterMaxIndex+1)
-
-	for _, filterConfig := range f.taskConfig.Filters {
+	for _, filterConfig := range taskConfig.Filters {
 		access := true
 		for _, condition := range filterConfig.Conditions {
 			// 匹配第n列，如果n小于等于0，则变更为整个字符串包含

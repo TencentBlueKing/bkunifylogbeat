@@ -25,42 +25,139 @@ package processor
 import (
 	"fmt"
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
+	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
+	"github.com/TencentBlueKing/bkunifylogbeat/task/sender"
+	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
+	"github.com/elastic/beats/filebeat/util"
 	"github.com/elastic/beats/libbeat/beat"
 	process "github.com/elastic/beats/libbeat/processors"
+	"sync"
+)
+
+var (
+	processorsMaps = map[string]*Processors{}
+	mtx            sync.RWMutex
 )
 
 // Processors : 兼容数据平台过滤规则
 type Processors struct {
-	taskConfig     *config.TaskConfig
-	processors     *process.Processors
-	filterMaxIndex int
+	*base.Node
+
+	processors *process.Processors
 }
 
-// NewProcessors : 兼容原采集器处理并复用filebeat.processors
-func NewProcessors(config *config.TaskConfig) (*Processors, error) {
-	processors := &Processors{
-		taskConfig: config,
+// GetProcessors : 获取processor
+func GetProcessors(taskCfg *config.TaskConfig, leafNode *base.Node) (*Processors, error) {
+	var (
+		ok bool
+		p  *Processors
+	)
+
+	func() {
+		mtx.RLock()
+		defer mtx.RUnlock()
+		p, ok = processorsMaps[taskCfg.ProcessorID]
+	}()
+
+	if ok {
+		send, err := sender.GetSender(taskCfg, leafNode)
+		if err != nil {
+			return nil, err
+		}
+
+		err = p.MergeProcessorsConfig(taskCfg)
+		if err != nil {
+			return nil, err
+		}
+
+		p.AddOutput(send.Node)
+		return p, nil
+	}
+	return NewProcessors(taskCfg, leafNode)
+}
+
+// NewProcessors : 新建processor
+func NewProcessors(taskCfg *config.TaskConfig, leafNode *base.Node) (*Processors, error) {
+	var err error
+	var p = &Processors{
+		Node: base.NewEmptyNode(taskCfg.ProcessorID),
+
+		processors: nil,
+	}
+	err = p.MergeProcessorsConfig(taskCfg)
+	if err != nil {
+		return nil, err
 	}
 
+	send, err := sender.NewSender(taskCfg, leafNode)
+	if err != nil {
+		return nil, err
+	}
+	p.AddOutput(send.Node)
+
+	go p.Run()
+
+	logp.L.Infof("add processors(%s) to global processorsMaps", p.ID)
+	mtx.Lock()
+	defer mtx.Unlock()
+	processorsMaps[taskCfg.ProcessorID] = p
+	return p, err
+}
+
+// RemoveProcessors : 移除全局缓存
+func RemoveProcessors(id string) {
+	logp.L.Infof("remove processors(%s) in global processorsMaps", id)
+	mtx.Lock()
+	defer mtx.Unlock()
+	delete(processorsMaps, id)
+}
+
+// MergeProcessorsConfig : 合并多个任务的Processor配置
+// 理论上Merge这里不存在任何动作，因为Processor的配置是一样的
+func (p *Processors) MergeProcessorsConfig(taskCfg *config.TaskConfig) error {
 	var err error
-	if config.Processors != nil {
-		processors.processors, err = process.New(config.Processors)
+	if p.processors == nil && taskCfg.Processors != nil {
+		p.processors, err = process.New(taskCfg.Processors)
 		if err != nil {
-			return nil, fmt.Errorf("create libbeat.processors faied, err=>%v", err)
+			return fmt.Errorf("create libbeat.processors faied, err=>%v", err)
 		}
 	}
-
-	return processors, nil
+	return nil
 }
 
-// Run : 处理采集事件
-func (client *Processors) Run(event *beat.Event) *beat.Event {
+// Run : 循环处理数据
+func (p *Processors) Run() {
+	defer RemoveProcessors(p.ID)
+	for {
+		select {
+		case <-p.End:
+			// node is done
+			return
+		case e := <-p.In:
+			data := e.(*util.Data)
+			event := p.Handle(&data.Event)
+			if event != nil {
+				for _, out := range p.Outs {
+					select {
+					case <-p.End:
+						logp.L.Infof("node processor(%s) is done", p.ID)
+						return
+					case out <- data:
+					}
+				}
+			}
+		}
+	}
+}
+
+// Handle : 处理采集事件
+func (p *Processors) Handle(event *beat.Event) *beat.Event {
 	if event.Fields == nil {
 		return event
 	}
 
-	if client.processors != nil {
-		event := client.processors.Run(event)
+	if p.processors != nil {
+		event := p.processors.Run(event)
 		if event == nil {
 			return nil
 		}

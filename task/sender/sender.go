@@ -24,123 +24,159 @@ package sender
 
 import (
 	"fmt"
+	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/formatter"
 	"sync"
 	"time"
 
-	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/bkmonitoring"
-	"github.com/elastic/beats/filebeat/util"
-	"github.com/elastic/beats/libbeat/monitoring"
-
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
+	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
+	"github.com/elastic/beats/filebeat/util"
 )
 
 var (
-	senderReceived  = bkmonitoring.NewInt("sender_received")
-	senderState     = bkmonitoring.NewInt("sender_state")
-	senderSendTotal = bkmonitoring.NewInt("sender_send_total")
+	//senderReceived  = bkmonitoring.NewInt("sender_received")
+	//senderState     = bkmonitoring.NewInt("sender_state")
+	//senderSendTotal = bkmonitoring.NewInt("sender_send_total")
+
+	senderMaps = map[string]*Sender{}
+	mtx        sync.RWMutex
 )
 
-// Sender: 对采集事件进行打包, 并调用beat发送事件
+// Sender : 对采集事件进行打包, 并调用beat发送事件
 type Sender struct {
-	taskConfig      *config.TaskConfig
-	taskDone        chan struct{}
-	cache           map[string][]*util.Data
-	input           chan *util.Data
-	wg              sync.WaitGroup
-	publisher       PublisherFunc
-	formatter       formatter.Formatter
-	senderReceive   *monitoring.Int // 接收的事件数
-	senderSendTotal *monitoring.Int // 发送到pipeline的数量
-	senderState     *monitoring.Int // 仅需要更新采集状态的事件数(event.Field为空)
+	*base.Node
+
+	sendConfig config.SenderConfig
+
+	cache      map[string][]*util.Data
+	cacheInput chan *util.Data
+
+	formatter      formatter.Formatter
+	taskConfigMaps map[string]*config.TaskConfig
+
+	//senderReceive   *monitoring.Int // 接收的事件数
+	//senderSendTotal *monitoring.Int // 发送到pipeline的数量
+	//senderState     *monitoring.Int // 仅需要更新采集状态的事件数(event.Field为空)
 }
 
-// Publisher: 接收采集事件并发送到outlet
+func GetSender(taskCfg *config.TaskConfig, leafNode *base.Node) (*Sender, error) {
+	var (
+		ok   bool
+		send *Sender
+	)
+
+	func() {
+		mtx.RLock()
+		defer mtx.RUnlock()
+		send, ok = senderMaps[taskCfg.SenderID]
+	}()
+
+	if ok {
+		err := send.MergeSenderConfig(taskCfg)
+		if err != nil {
+			return nil, err
+		}
+		send.AddOutput(leafNode)
+		return send, nil
+	}
+	return NewSender(taskCfg, leafNode)
+}
+
+func NewSender(taskCfg *config.TaskConfig, leafNode *base.Node) (*Sender, error) {
+	var err error
+	var send = &Sender{
+		Node: base.NewEmptyNode(taskCfg.SenderID),
+
+		cache:      make(map[string][]*util.Data),
+		cacheInput: make(chan *util.Data),
+
+		taskConfigMaps: map[string]*config.TaskConfig{},
+	}
+	err = send.MergeSenderConfig(taskCfg)
+	if err != nil {
+		return nil, err
+	}
+
+	send.AddOutput(leafNode)
+
+	go send.Run()
+
+	logp.L.Infof("add sender(%s) in global senderMaps", send.ID)
+	mtx.Lock()
+	defer mtx.Unlock()
+	senderMaps[taskCfg.SenderID] = send
+	return send, err
+}
+
+// RemoveSender : 移除全局缓存
+func RemoveSender(id string) {
+	logp.L.Infof("remove sender(%s) in global senderMaps", id)
+	mtx.Lock()
+	defer mtx.Unlock()
+	delete(senderMaps, id)
+}
+
+// PublisherFunc : 接收采集事件并发送到outlet
 type PublisherFunc func(beat.Event) bool
 
-// NewSender 生成采集器Sender实例
-func NewSender(config *cfg.TaskConfig, taskDone chan struct{}, publisher PublisherFunc) (*Sender, error) {
-	sender := &Sender{
-		taskConfig: config,
-		taskDone:   taskDone,
-		cache:      make(map[string][]*util.Data),
-		input:      make(chan *util.Data),
-		publisher:  publisher,
+// MergeSenderConfig 生成采集器Sender实例
+// 理论上Merge这里不存在任何动作，因为Sender的配置是一样的
+func (send *Sender) MergeSenderConfig(taskCfg *config.TaskConfig) error {
+	send.taskConfigMaps[taskCfg.ID] = taskCfg
+
+	// 因为配置一致，所以这里判断如果已经生成了则直接返回
+	if send.formatter != nil {
+		return nil
 	}
 
 	//formatter
-	outputFormat := config.OutputFormat
+	outputFormat := taskCfg.OutputFormat
 	if outputFormat == "" {
 		outputFormat = "default"
 	}
 	f, err := formatter.FindFormatterFactory(outputFormat)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	sender.formatter, err = f(config)
+	send.formatter, err = f(taskCfg)
 	if err != nil {
-		return nil, err
+		return err
 	}
+	send.sendConfig = taskCfg.SenderConfig
 
 	//sender metrics
-	sender.senderReceive = bkmonitoring.NewIntWithDataID(config.DataID, "sender_received")
-	sender.senderState = bkmonitoring.NewIntWithDataID(config.DataID, "sender_state")
-	sender.senderSendTotal = bkmonitoring.NewIntWithDataID(config.DataID, "sender_send_total")
-	return sender, nil
+	//send.senderReceive = bkmonitoring.NewIntWithDataID(config.DataID, "sender_received")
+	//send.senderState = bkmonitoring.NewIntWithDataID(config.DataID, "sender_state")
+	//send.senderSendTotal = bkmonitoring.NewIntWithDataID(config.DataID, "sender_send_total")
+
+	return nil
 }
 
-// Start 启动Sender实例
-func (client *Sender) Start() {
-	logp.L.Infof("Starting sender, %s", client.String())
-	go func() {
-		err := client.run()
-		if err != nil {
-			logp.L.Errorf("sender(%s) err, %v", client.String(), err)
-		}
-	}()
-}
+func (send *Sender) Run() {
+	defer RemoveSender(send.ID)
 
-// OnEvent 获取采集事件
-func (client *Sender) OnEvent(data *util.Data) bool {
-	select {
-	case <-client.taskDone:
-		logp.L.Info("task is done. return OnEvent")
-		return false
-	case client.input <- data:
-		client.senderReceive.Add(1)
-		senderReceived.Add(1)
-		return true
-	}
-}
-
-func (client *Sender) run() error {
-	senderDuration := 1 * time.Second
-	senderTicker := time.NewTicker(senderDuration)
-
-	defer func() {
-		senderTicker.Stop()
-	}()
-
+	senderTicker := time.NewTicker(1 * time.Second)
+	senderTicker.Stop()
 	for {
 		select {
-		case <-client.taskDone:
-			logp.L.Infof("sender quit, id: %s", client.String())
-			return nil
+		case <-send.End:
+			logp.L.Infof("sender quit, id: %s", send.String())
+			return
 
 		case <-senderTicker.C:
 			// clear cache
-			for _, buffer := range client.cache {
+			for _, buffer := range send.cache {
 				if len(buffer) > 0 {
-					client.send(buffer)
+					send.send(buffer)
 				}
 			}
-			client.cache = make(map[string][]*util.Data)
+			send.cache = make(map[string][]*util.Data)
 
-		case event := <-client.input:
-			err := client.cacheSend(event)
+		case e := <-send.In:
+			event := e.(*util.Data)
+			err := send.cacheSend(event)
 			if err != nil {
 				logp.L.Errorf("send event error, %v", err)
 				continue
@@ -149,78 +185,91 @@ func (client *Sender) run() error {
 	}
 }
 
-// Wait
-func (client *Sender) Wait() {
-	client.wg.Wait()
-}
-
 // Sender 实例名称
-func (client *Sender) String() string {
-	return fmt.Sprintf("Sender-TaskID-%s", client.taskConfig.ID)
+func (send *Sender) String() string {
+	return fmt.Sprintf("Sender-SenderID-%s", send.ID)
 }
 
-func (client *Sender) cacheSend(event *util.Data) error {
+func (send *Sender) cacheSend(event *util.Data) error {
 	source := event.GetState().Source
 
-	if !client.taskConfig.CanPackage {
-		client.send([]*util.Data{event})
+	if !send.sendConfig.CanPackage {
+		send.send([]*util.Data{event})
 		return nil
 	}
 
-	buffer, exist := client.cache[source]
+	buffer, exist := send.cache[source]
 	// 特殊事件直接发送
 	if event.Event.Fields == nil {
 		if exist {
 			buffer = append(buffer, event)
-			client.send(buffer)
-			client.cache[source] = []*util.Data{}
+			send.send(buffer)
+			send.cache[source] = []*util.Data{}
 			return nil
 		}
-		client.send([]*util.Data{event})
+		send.send([]*util.Data{event})
 		return nil
 	}
 
 	//正常事件处理
 	if exist {
-		client.cache[source] = append(buffer, event)
+		send.cache[source] = append(buffer, event)
 	} else {
-		client.cache[source] = []*util.Data{event}
+		send.cache[source] = []*util.Data{event}
 	}
 
 	// if msg count reach max count, clear cache
-	if len(client.cache[source]) >= client.taskConfig.PackageCount {
-		client.send(client.cache[source])
+	if len(send.cache[source]) >= send.sendConfig.PackageCount {
+		send.send(send.cache[source])
 		// clear cache
-		client.cache[source] = []*util.Data{}
+		send.cache[source] = []*util.Data{}
 	}
 	return nil
 }
 
 // send: 调用beat.SendEvent发送打包后的采集事件
-func (client *Sender) send(events []*util.Data) {
+func (send *Sender) send(events []*util.Data) {
+	var packageEvent beat.Event
 	if len(events) == 0 {
 		return
 	}
 
 	lastState := events[len(events)-1].GetState()
-	data := client.formatter.Format(events)
-	//处理状态事件
-	if data == nil {
-		client.senderState.Add(1)
-		senderState.Add(1)
-		client.publisher(beat.Event{
-			Fields:  nil,
-			Private: lastState,
-		})
-		return
-	}
+	formattedEvent := send.formatter.Format(events)
 
 	// send data
-	client.publisher(beat.Event{
-		Fields:  data,
-		Private: lastState,
-	})
-	// 发送到pipeline的数量
-	client.senderSendTotal.Add(1)
-	senderSendTotal.Add(1)
+	for taskID, out := range send.Outs {
+		taskConfig, ok := send.taskConfigMaps[taskID]
+		if !ok {
+			logp.L.Errorf("send to out error, out's taskConfig is nil, %s", taskID)
+			continue
+		}
+
+		data := formattedEvent.Clone()
+		data["dataid"] = taskConfig.DataID
+		//处理状态事件
+		if data == nil {
+			//send.senderState.Add(1)
+			//senderState.Add(1)
+
+			packageEvent = beat.Event{
+				Fields:  nil,
+				Private: lastState,
+			}
+		} else {
+			packageEvent = beat.Event{
+				Fields:  data,
+				Private: lastState,
+			}
+			// 发送到pipeline的数量
+			//send.senderSendTotal.Add(1)
+			//senderSendTotal.Add(1)
+		}
+		select {
+		case <-send.End:
+			logp.L.Infof("node filter(%s) is done", send.ID)
+			return
+		case out <- packageEvent:
+		}
+	}
 }

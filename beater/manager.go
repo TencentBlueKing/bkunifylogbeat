@@ -24,6 +24,7 @@ package beater
 
 import (
 	"fmt"
+	"github.com/TencentBlueKing/bkunifylogbeat/task/input"
 	"github.com/elastic/beats/filebeat/input/file"
 	"sync"
 
@@ -43,35 +44,33 @@ var (
 	taskError   = bkmonitoring.NewInt("manager_error")
 )
 
-// Manager: 任务管理
+// Manager : 任务管理
 // 1. 读取采集任务
 // 2. 管理任务生命周期：创建、删除
 type Manager struct {
-	tasks       map[string]*task.Task
-	tasksConfig map[string]*cfg.TaskConfig
-	config      cfg.Config
-	wg          sync.WaitGroup
-	beatDone    chan struct{}
+	tasks    map[string]*task.Task
+	config   cfg.Config
+	wg       sync.WaitGroup
+	beatDone chan struct{}
 }
 
-// create new manager
+// NewManager : create new manager
 func NewManager(config cfg.Config, beatDone chan struct{}) (*Manager, error) {
 	m := &Manager{
-		config:      config,
-		beatDone:    beatDone,
-		tasks:       make(map[string]*task.Task),
-		tasksConfig: make(map[string]*cfg.TaskConfig),
+		config:   config,
+		beatDone: beatDone,
+		tasks:    make(map[string]*task.Task),
 	}
 
 	return m, nil
 }
 
-// Run start and link modules
+// Start : Run start and link modules
 func (m *Manager) Start() error {
 	var err error
 	logp.L.Info("start manager")
 
-	task.SetResourceLimit(m.config.MaxCpuLimit, m.config.CpuCheckTimes)
+	input.SetResourceLimit(m.config.MaxCpuLimit, m.config.CpuCheckTimes)
 
 	// Task
 	lastStates := registrar.ResetStates(Registrar.GetStates())
@@ -87,7 +86,7 @@ func (m *Manager) Start() error {
 	return nil
 }
 
-// Close manager when program quit
+// Stop : Close manager when program quit
 func (m *Manager) Stop() error {
 	for _, t := range m.tasks {
 		t.Stop()
@@ -102,23 +101,23 @@ func (m *Manager) Stop() error {
 func (m *Manager) Reload(config cfg.Config) {
 	logp.L.Infof("[Reload]update config, current tasks=>%d", len(m.tasks))
 
-	task.SetResourceLimit(config.MaxCpuLimit, config.CpuCheckTimes)
+	input.SetResourceLimit(config.MaxCpuLimit, config.CpuCheckTimes)
 
 	lastStates := registrar.ResetStates(Registrar.GetStates())
-	tasks := cfg.GetTasks(config)
+	newTasks := cfg.GetTasks(config)
 
 	reloadTasks := make(map[string]*cfg.TaskConfig)
 	removeTasks := make(map[string]*cfg.TaskConfig)
 	addTasks := make(map[string]*cfg.TaskConfig)
 
 	//step 1: 生成原来的任务清单
-	for taskID, taskConfig := range m.tasksConfig {
-		removeTasks[taskID] = taskConfig
+	for taskID, taskInst := range m.tasks {
+		removeTasks[taskID] = taskInst.Config
 	}
 
 	//step 2: 根据新配置找出有变动的任务列表
-	for taskID, taskConfig := range tasks {
-		if originTaskConfig, ok := m.tasksConfig[taskID]; ok {
+	for taskID, taskConfig := range newTasks {
+		if originTaskConfig, ok := removeTasks[taskID]; ok {
 			if originTaskConfig.Same(taskConfig) {
 				logp.L.Debugf("logbeat", "ignore secondary config file: %s, for already exists", taskID)
 				delete(removeTasks, taskID)
@@ -135,7 +134,7 @@ func (m *Manager) Reload(config cfg.Config) {
 	}
 
 	logp.L.Infof("[Reload]originTasks=>%d, removeTasks=>%d, addTasks=>%d",
-		len(tasks), len(removeTasks), len(addTasks))
+		len(newTasks), len(removeTasks), len(addTasks))
 
 	//step 3：清理任务信息
 	var err error
@@ -178,27 +177,27 @@ func (m *Manager) Reload(config cfg.Config) {
 	m.config = config
 }
 
-// startTask: 启动任务，调用filebeat.runner开始进行日志采集
+// startTask : 启动任务，调用filebeat.runner开始进行日志采集
 func (m *Manager) startTask(config *cfg.TaskConfig, lastStates []file.State) error {
 	if _, ok := m.tasks[config.ID]; ok {
 		return fmt.Errorf("task with same ID already exists: %s", config.ID)
 	}
 	var err error
-	taskInst := task.NewTask(config, m.beatDone)
-	err = taskInst.Start(lastStates)
+	taskInst, err := task.NewTask(config, m.beatDone, lastStates)
 	if err != nil {
 		logp.L.Errorf("start task err, taskid=>%s err=>%v", taskInst.ID, err)
 		taskError.Add(1)
 		return err
 	}
+	taskInst.Start()
+
 	m.wg.Add(1)
 	m.tasks[config.ID] = taskInst
-	m.tasksConfig[config.ID] = config
 	taskActive.Add(1)
 	return nil
 }
 
-// removeTask: 移除任务，停止filebeat.runner
+// removeTask : 移除任务，停止filebeat.runner
 func (m *Manager) removeTask(taskID string) error {
 	var err error
 	if _, ok := m.tasks[taskID]; !ok {
@@ -211,12 +210,11 @@ func (m *Manager) removeTask(taskID string) error {
 	}
 	m.wg.Done()
 	delete(m.tasks, taskID)
-	delete(m.tasksConfig, taskID)
 	taskActive.Sub(1)
 	return nil
 }
 
-// reloadTask: 任务重载
+// reloadTask : 任务重载
 func (m *Manager) reloadTask(taskID string) error {
 	var err error
 	if _, ok := m.tasks[taskID]; !ok {

@@ -26,7 +26,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
-	"strconv"
+	"time"
 
 	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
@@ -35,7 +35,7 @@ import (
 	"github.com/elastic/beats/libbeat/processors"
 )
 
-// ConditionConfig: 用于条件表达式，目前支持=、!=
+// ConditionConfig : 用于条件表达式，目前支持=、!=
 type ConditionConfig struct {
 	Index int    `config:"index"`
 	Key   string `config:"key"`
@@ -47,7 +47,7 @@ type FilterConfig struct {
 	Conditions []ConditionConfig `config:"conditions"`
 }
 
-//condition配置
+// ConditionSortByIndex condition配置
 type ConditionSortByIndex []ConditionConfig
 
 // Len is the number of elements in the collection.
@@ -56,20 +56,26 @@ func (a ConditionSortByIndex) Len() int { return len(a) }
 // Swap swaps the elements with indexes i and j.
 func (a ConditionSortByIndex) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 
-// Len is the number of elements in the collection.
+// Less is the number of elements in the collection.
 func (a ConditionSortByIndex) Less(i, j int) bool { return a[i].Index < a[j].Index }
 
-// 采集任务配置
-type TaskConfig struct {
-	ID     string
-	Type   string `config:"type"`
-	DataID int    `config:"dataid"`
-	// Processor
+type InputConfig struct {
+	ScanFrequency time.Duration `config:"scan_frequency" validate:"min=0,nonzero"`
+	Type          string        `config:"type"`
+	InputType     string        `config:"input_type"`
+}
+
+type ProcessorConfig struct {
 	Processors processors.PluginConfig `config:"processors"`
-	Delimiter  string                  `config:"delimiter"`
-	Filters    []FilterConfig          `config:"filters"`
-	HasFilter  bool
-	// Sender
+}
+
+type FiltersConfig struct {
+	Delimiter string         `config:"delimiter"`
+	Filters   []FilterConfig `config:"filters"`
+	HasFilter bool
+}
+
+type SenderConfig struct {
 	CanPackage   bool        `config:"package"`
 	PackageCount int         `config:"package_count"`
 	ExtMeta      interface{} `config:"ext_meta"`
@@ -78,20 +84,49 @@ type TaskConfig struct {
 	RemovePathPrefix string `config:"remove_path_prefix"` // 去除路径前缀
 	IsContainerStd   bool   `config:"is_container_std"`   // 是否为容器标准输出日志
 	OutputFormat     string `config:"output_format"`      // 输出格式，为了兼容老版采集器的输出格式
+}
+
+func (s *SenderConfig) IsSame() bool {
+	return false
+}
+
+// TaskConfig 采集任务配置
+type TaskConfig struct {
+	ID     string
+	Type   string `config:"type"`
+	DataID int    `config:"dataid"`
+
+	// Processor
+	ProcessorID     string // 用来标识配置的唯一性
+	ProcessorConfig `config:",inline"`
+
+	// Filter
+	FilterID      string
+	FiltersConfig `config:",inline"`
+
+	// Sender
+	SenderID     string
+	SenderConfig `config:",inline"`
+
+	// Input
+	InputID string
 
 	RawConfig *beat.Config
 }
 
-// 创建采集任务配置
+// NewTaskConfig 创建采集任务配置
 func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
 	config := &TaskConfig{
-		Type:         "log",
-		DataID:       0,
-		CanPackage:   true,
-		PackageCount: 10,
-		ExtMeta:      nil,
-		OutputFormat: "v2",
+		Type:   "log",
+		DataID: 0,
+		SenderConfig: SenderConfig{
+			CanPackage:   true,
+			PackageCount: 10,
+			ExtMeta:      nil,
+			OutputFormat: "v2",
+		},
 	}
+
 	err := rawConfig.Unpack(&config)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing raw config => %v", err)
@@ -133,22 +168,57 @@ func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
 			}
 		}
 	}
+
 	//根据任务配置获取hash值
 	err, config.ID = utils.HashRawConfig(config.RawConfig)
 	if err != nil {
 		return nil, err
 	}
-	config.ID = fmt.Sprintf("%s_%s", strconv.Itoa(config.DataID), config.ID)
+	config.ID = fmt.Sprintf("%d_%s", config.DataID, config.ID)
+
+	initIDWithConfig(config)
 
 	return config, nil
 }
 
-// Same用于采集器reload时，比较同一dataid的任务是否有做调整
+func initIDWithConfig(config *TaskConfig) {
+	var (
+		hashVal    string
+		copyConfig *common.Config
+	)
+	copyConfig, _ = common.NewConfigFrom(config.RawConfig)
+
+	RemoveFields(copyConfig, map[string]interface{}{"dataid": config.DataID})
+	_, hashVal = utils.HashRawConfig(copyConfig)
+	config.SenderID = fmt.Sprintf("sender-%s", hashVal)
+
+	RemoveFields(copyConfig, config.SenderConfig)
+	_, hashVal = utils.HashRawConfig(copyConfig)
+	config.ProcessorID = fmt.Sprintf("processor-%s", hashVal)
+
+	RemoveFields(copyConfig, config.ProcessorConfig)
+	RemoveFields(copyConfig, map[string]interface{}{"filters": config.Filters})
+	_, hashVal = utils.HashRawConfig(copyConfig)
+	config.FilterID = fmt.Sprintf("filter-%s", hashVal)
+
+	RemoveFields(copyConfig, config.FiltersConfig)
+	_, hashVal = utils.HashRawConfig(copyConfig)
+	config.InputID = fmt.Sprintf("input-%s", hashVal)
+}
+
+func RemoveFields(config *common.Config, from interface{}) {
+	removeConfig, _ := common.NewConfigFrom(from)
+	for _, fieldName := range removeConfig.GetFields() {
+		_, _ = config.Remove(fieldName, -1)
+	}
+}
+
+// Same 用于采集器reload时，比较同一dataid的任务是否有做调整
 func (sourceConfig *TaskConfig) Same(targetConfig *TaskConfig) bool {
 	return sourceConfig.ID == targetConfig.ID
 }
 
-// GetTasks根据主配置定义的从配置目录，获取采集器定义的任务列表
+// GetTasks 根据主配置定义的从配置目录，获取采集器定义的任务列表
 func GetTasks(config Config) map[string]*TaskConfig {
 	tasks := make(map[string]*TaskConfig)
 
