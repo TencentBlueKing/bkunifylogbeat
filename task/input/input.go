@@ -5,6 +5,7 @@ import (
 	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/filter"
 	"github.com/TencentBlueKing/bkunifylogbeat/utils"
+	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/bkmonitoring"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
 	"github.com/elastic/beats/filebeat/channel"
 	"github.com/elastic/beats/filebeat/input"
@@ -22,6 +23,10 @@ var (
 
 	inputMaps = map[string]*Input{}
 	mtx       sync.RWMutex
+
+	numOfInputTotal = bkmonitoring.NewInt("task_input_total") // 当前全局input的数量
+	crawlerReceived = bkmonitoring.NewInt("crawler_received") // 接收到的所有事件数
+	crawlerState    = bkmonitoring.NewInt("crawler_state")    // 接收到的所有事件中状态事件数量
 )
 
 // SetResourceLimit 在一定程度上限制CPU使用
@@ -109,7 +114,8 @@ func NewInput(
 	mtx.Lock()
 	defer mtx.Unlock()
 	inputMaps[taskCfg.InputID] = in
-	return in, err
+	numOfInputTotal.Add(1)
+	return in, nil
 }
 
 // RemoveInput : 移除全局缓存
@@ -118,6 +124,7 @@ func RemoveInput(id string) {
 	mtx.Lock()
 	defer mtx.Unlock()
 	delete(inputMaps, id)
+	numOfInputTotal.Add(-1)
 }
 
 type Input struct {
@@ -158,6 +165,8 @@ func (in *Input) Run() {
 				}
 			}
 
+			crawlerReceived.Add(1)
+
 			data := e.(*util.Data)
 			if data.Event.Fields != nil {
 				for _, out := range in.Outs {
@@ -167,6 +176,9 @@ func (in *Input) Run() {
 					case out <- data:
 					}
 				}
+			} else {
+				// 采集进度类事件
+				crawlerState.Add(1)
 			}
 		}
 	}
@@ -217,43 +229,5 @@ func (in *Input) OnEvent(data *util.Data) bool {
 	case in.In <- data:
 	}
 
-	//接收到的事件
-	//task.crawlerReceived.Add(1)
-	//crawlerReceived.Add(1)
-
-	//if event.Fields == nil {
-	//	//采集进度类事件
-	//	//task.crawlerState.Add(1)
-	//	//crawlerState.Add(1)
-	//} else {
-	//
-	//
-	//	for _, out := range in.Outs {
-	//		select {
-	//		case <- in.End:
-	//			in.stop()
-	//			return false
-	//		case out <- data:
-	//		}
-	//	}
-
-	//event = task.filters.Run(event)
-	//if event != nil {
-	//	event = task.processors.Run(event)
-	//}
-	//
-	//if event != nil {
-	//	//正常事件
-	//	//task.crawlerSendTotal.Add(1)
-	//	//crawlerSendTotal.Add(1)
-	//	data.Event = *event
-	//} else {
-	//	//需要丢弃的事件
-	//	data.Event.Fields = nil
-	//	//task.crawlerDropped.Add(1)
-	//	//crawlerDropped.Add(1)
-	//}
-	//}
 	return true
-	//return task.sender.OnEvent(data)
 }

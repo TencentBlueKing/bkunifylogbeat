@@ -27,6 +27,7 @@ import (
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/sender"
+	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/bkmonitoring"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
 	"github.com/elastic/beats/filebeat/util"
 	"github.com/elastic/beats/libbeat/beat"
@@ -37,6 +38,9 @@ import (
 var (
 	processorsMaps = map[string]*Processors{}
 	mtx            sync.RWMutex
+
+	numOfProcessTotal     = bkmonitoring.NewInt("task_processors_total") // 当前全局processors的数量
+	crawlerProcessDropped = bkmonitoring.NewInt("crawler_processors_dropped")
 )
 
 // Processors : 兼容数据平台过滤规则
@@ -101,7 +105,8 @@ func NewProcessors(taskCfg *config.TaskConfig, leafNode *base.Node) (*Processors
 	mtx.Lock()
 	defer mtx.Unlock()
 	processorsMaps[taskCfg.ProcessorID] = p
-	return p, err
+	numOfProcessTotal.Add(1)
+	return p, nil
 }
 
 // RemoveProcessors : 移除全局缓存
@@ -110,6 +115,7 @@ func RemoveProcessors(id string) {
 	mtx.Lock()
 	defer mtx.Unlock()
 	delete(processorsMaps, id)
+	numOfProcessTotal.Add(-1)
 }
 
 // MergeProcessorsConfig : 合并多个任务的Processor配置
@@ -145,6 +151,8 @@ func (p *Processors) Run() {
 					case out <- data:
 					}
 				}
+			} else {
+				crawlerProcessDropped.Add(1)
 			}
 		}
 	}

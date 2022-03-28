@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/formatter"
+	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/bkmonitoring"
 	"sync"
 	"time"
 
@@ -36,12 +37,14 @@ import (
 )
 
 var (
-	//senderReceived  = bkmonitoring.NewInt("sender_received")
-	//senderState     = bkmonitoring.NewInt("sender_state")
-	//senderSendTotal = bkmonitoring.NewInt("sender_send_total")
+	senderReceived  = bkmonitoring.NewInt("sender_received")
+	senderState     = bkmonitoring.NewInt("sender_state")
+	senderSendTotal = bkmonitoring.NewInt("sender_send_total")
 
 	senderMaps = map[string]*Sender{}
 	mtx        sync.RWMutex
+
+	numOfSenderTotal = bkmonitoring.NewInt("task_sender_total") // 当前全局sender的数量
 )
 
 // Sender : 对采集事件进行打包, 并调用beat发送事件
@@ -55,10 +58,6 @@ type Sender struct {
 
 	formatter      formatter.Formatter
 	taskConfigMaps map[string]*config.TaskConfig
-
-	//senderReceive   *monitoring.Int // 接收的事件数
-	//senderSendTotal *monitoring.Int // 发送到pipeline的数量
-	//senderState     *monitoring.Int // 仅需要更新采集状态的事件数(event.Field为空)
 }
 
 func GetSender(taskCfg *config.TaskConfig, leafNode *base.Node) (*Sender, error) {
@@ -107,7 +106,8 @@ func NewSender(taskCfg *config.TaskConfig, leafNode *base.Node) (*Sender, error)
 	mtx.Lock()
 	defer mtx.Unlock()
 	senderMaps[taskCfg.SenderID] = send
-	return send, err
+	numOfSenderTotal.Add(1)
+	return send, nil
 }
 
 // RemoveSender : 移除全局缓存
@@ -116,6 +116,7 @@ func RemoveSender(id string) {
 	mtx.Lock()
 	defer mtx.Unlock()
 	delete(senderMaps, id)
+	numOfSenderTotal.Add(-1)
 }
 
 // PublisherFunc : 接收采集事件并发送到outlet
@@ -146,11 +147,6 @@ func (send *Sender) MergeSenderConfig(taskCfg *config.TaskConfig) error {
 	}
 	send.sendConfig = taskCfg.SenderConfig
 
-	//sender metrics
-	//send.senderReceive = bkmonitoring.NewIntWithDataID(config.DataID, "sender_received")
-	//send.senderState = bkmonitoring.NewIntWithDataID(config.DataID, "sender_state")
-	//send.senderSendTotal = bkmonitoring.NewIntWithDataID(config.DataID, "sender_send_total")
-
 	return nil
 }
 
@@ -158,7 +154,7 @@ func (send *Sender) Run() {
 	defer RemoveSender(send.ID)
 
 	senderTicker := time.NewTicker(1 * time.Second)
-	senderTicker.Stop()
+	defer senderTicker.Stop()
 	for {
 		select {
 		case <-send.End:
@@ -175,6 +171,7 @@ func (send *Sender) Run() {
 			send.cache = make(map[string][]*util.Data)
 
 		case e := <-send.In:
+			senderReceived.Add(1)
 			event := e.(*util.Data)
 			err := send.cacheSend(event)
 			if err != nil {
@@ -249,8 +246,7 @@ func (send *Sender) send(events []*util.Data) {
 		data["dataid"] = taskConfig.DataID
 		//处理状态事件
 		if data == nil {
-			//send.senderState.Add(1)
-			//senderState.Add(1)
+			senderState.Add(1)
 
 			packageEvent = beat.Event{
 				Fields:  nil,
@@ -262,8 +258,7 @@ func (send *Sender) send(events []*util.Data) {
 				Private: lastState,
 			}
 			// 发送到pipeline的数量
-			//send.senderSendTotal.Add(1)
-			//senderSendTotal.Add(1)
+			senderSendTotal.Add(1)
 		}
 		select {
 		case <-send.End:

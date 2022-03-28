@@ -5,6 +5,7 @@ import (
 	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/processor"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
+	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/bkmonitoring"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
 	"github.com/elastic/beats/filebeat/util"
 	"strings"
@@ -14,6 +15,10 @@ import (
 var (
 	filterMaps = map[string]*Filters{}
 	mtx        sync.RWMutex
+
+	numOfFilterTotal = bkmonitoring.NewInt("task_filter_total") // 当前全局filter的数量
+
+	crawlerDropped = bkmonitoring.NewInt("crawler_dropped") // 被过滤的总数
 )
 
 type Filters struct {
@@ -73,7 +78,8 @@ func NewFilters(taskCfg *config.TaskConfig, leafNode *base.Node) (*Filters, erro
 	mtx.Lock()
 	defer mtx.Unlock()
 	filterMaps[taskCfg.FilterID] = fil
-	return fil, err
+	numOfFilterTotal.Add(1)
+	return fil, nil
 }
 
 // RemoveFilter : 移除全局缓存
@@ -82,6 +88,7 @@ func RemoveFilter(id string) {
 	mtx.Lock()
 	defer mtx.Unlock()
 	delete(filterMaps, id)
+	numOfFilterTotal.Add(-1)
 }
 
 func (f *Filters) MergeFilterConfig(taskCfg *config.TaskConfig) {
@@ -95,7 +102,7 @@ func (f *Filters) MergeFilterConfig(taskCfg *config.TaskConfig) {
 			}
 		}
 	}
-	f.taskConfigMaps[taskCfg.ID] = taskCfg
+	f.taskConfigMaps[taskCfg.ProcessorID] = taskCfg
 }
 
 func (f *Filters) Run() {
@@ -109,7 +116,6 @@ func (f *Filters) Run() {
 			data := e.(*util.Data)
 			event := &data.Event
 
-			// index为N时，数组切分最少需要分成N+1段
 			var text string
 			var ok bool
 			text, ok = event.Fields["data"].(string)
@@ -125,14 +131,16 @@ func (f *Filters) Run() {
 				break
 			}
 
+			// index为N时，数组切分最少需要分成N+1段
 			words := strings.SplitN(text, f.Delimiter, f.filterMaxIndex+1)
-			for _, taskConfig := range f.taskConfigMaps {
+			for processorID, taskConfig := range f.taskConfigMaps {
 				event := f.Handle(words, text, taskConfig, event)
 				if event == nil {
+					crawlerDropped.Add(1)
 					continue
 				}
 
-				out, ok := f.Outs[taskConfig.ProcessorID]
+				out, ok := f.Outs[processorID]
 				if ok {
 					select {
 					case <-f.End:

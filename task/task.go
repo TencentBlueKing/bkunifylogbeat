@@ -20,10 +20,6 @@
 // WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 // SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-// task manager
-// 1. task pipeline
-// 2. input runner
-
 package task
 
 import (
@@ -39,14 +35,7 @@ import (
 )
 
 var (
-//inputFailed      = bkmonitoring.NewInt("task_input_failed")
-//processorsFailed = bkmonitoring.NewInt("task_processors_failed")
-//senderFailed     = bkmonitoring.NewInt("task_sender_failed")
-//
-//crawlerReceived  = bkmonitoring.NewInt("crawler_received")
-//crawlerState     = bkmonitoring.NewInt("crawler_state")
-//crawlerSendTotal = bkmonitoring.NewInt("crawler_send_total")
-//crawlerDropped   = bkmonitoring.NewInt("crawler_dropped")
+	crawlerSendTotal = bkmonitoring.NewInt("crawler_send_total")
 )
 
 // Task 采集任务具体实现，负责filebeat采集事件处理、过滤、打包，并发送到采集框架
@@ -58,10 +47,7 @@ type Task struct {
 
 	input *input.Input
 
-	crawlerReceived  *monitoring.Int //state事件
-	crawlerState     *monitoring.Int //state事件
 	crawlerSendTotal *monitoring.Int //正常事件总数
-	crawlerDropped   *monitoring.Int //过滤掉的事件总数
 }
 
 // NewTask 生成采集任务实例
@@ -79,10 +65,7 @@ func NewTask(config *cfg.TaskConfig, beatDone chan struct{}, lastStates []file.S
 		Config:   config,
 		beatDone: beatDone,
 	}
-	task.crawlerReceived = bkmonitoring.NewIntWithDataID(config.DataID, "crawler_received")
-	task.crawlerState = bkmonitoring.NewIntWithDataID(config.DataID, "crawler_state")
 	task.crawlerSendTotal = bkmonitoring.NewIntWithDataID(config.DataID, "crawler_send_total")
-	task.crawlerDropped = bkmonitoring.NewIntWithDataID(config.DataID, "crawler_dropped")
 
 	var err error
 	task.input, err = input.GetInput(task.Config, task.Node, task.End, lastStates)
@@ -113,6 +96,8 @@ func (task *Task) Run() {
 			logp.L.Infof("task(%s) is done", task.ID)
 			return
 		case event := <-task.In:
+			crawlerSendTotal.Add(1)
+			task.crawlerSendTotal.Add(1)
 			beat.SendEvent(event.(beat.Event))
 		}
 	}
@@ -122,10 +107,7 @@ func (task *Task) Run() {
 func (task *Task) Stop() error {
 	logp.L.Infof("task(%s) is Stop", task.ID)
 	task.ParentNode.RemoveOutput(task.Node)
-
-	task.crawlerState.Set(0)
 	task.crawlerSendTotal.Set(0)
-	task.crawlerDropped.Set(0)
 	return nil
 }
 
