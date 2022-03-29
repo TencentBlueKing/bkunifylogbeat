@@ -39,8 +39,10 @@ var (
 	processorsMaps = map[string]*Processors{}
 	mtx            sync.RWMutex
 
-	numOfProcessTotal     = bkmonitoring.NewInt("task_processors_total") // 当前全局processors的数量
-	crawlerProcessDropped = bkmonitoring.NewInt("crawler_processors_dropped")
+	numOfProcessTotal = bkmonitoring.NewInt("num_processors_total") // 当前全局processors的数量
+
+	processDroppedTotal = bkmonitoring.NewInt("processors_dropped_total")
+	processHandledTotal = bkmonitoring.NewInt("processors_handled_total")
 )
 
 // Processors : 兼容数据平台过滤规则
@@ -51,7 +53,7 @@ type Processors struct {
 }
 
 // GetProcessors : 获取processor
-func GetProcessors(taskCfg *config.TaskConfig, leafNode *base.Node) (*Processors, error) {
+func GetProcessors(taskCfg *config.TaskConfig, taskNode *base.TaskNode) (*Processors, error) {
 	var (
 		ok bool
 		p  *Processors
@@ -64,7 +66,7 @@ func GetProcessors(taskCfg *config.TaskConfig, leafNode *base.Node) (*Processors
 	}()
 
 	if ok {
-		send, err := sender.GetSender(taskCfg, leafNode)
+		send, err := sender.GetSender(taskCfg, taskNode)
 		if err != nil {
 			return nil, err
 		}
@@ -75,13 +77,14 @@ func GetProcessors(taskCfg *config.TaskConfig, leafNode *base.Node) (*Processors
 		}
 
 		p.AddOutput(send.Node)
+		p.AddTaskNode(send.Node, taskNode)
 		return p, nil
 	}
-	return NewProcessors(taskCfg, leafNode)
+	return NewProcessors(taskCfg, taskNode)
 }
 
 // NewProcessors : 新建processor
-func NewProcessors(taskCfg *config.TaskConfig, leafNode *base.Node) (*Processors, error) {
+func NewProcessors(taskCfg *config.TaskConfig, taskNode *base.TaskNode) (*Processors, error) {
 	var err error
 	var p = &Processors{
 		Node: base.NewEmptyNode(taskCfg.ProcessorID),
@@ -93,11 +96,12 @@ func NewProcessors(taskCfg *config.TaskConfig, leafNode *base.Node) (*Processors
 		return nil, err
 	}
 
-	send, err := sender.NewSender(taskCfg, leafNode)
+	send, err := sender.NewSender(taskCfg, taskNode)
 	if err != nil {
 		return nil, err
 	}
 	p.AddOutput(send.Node)
+	p.AddTaskNode(send.Node, taskNode)
 
 	go p.Run()
 
@@ -149,10 +153,17 @@ func (p *Processors) Run() {
 						logp.L.Infof("node processor(%s) is done", p.ID)
 						return
 					case out <- data:
+						processHandledTotal.Add(1)
 					}
 				}
 			} else {
-				crawlerProcessDropped.Add(1)
+				processDroppedTotal.Add(1)
+				for _, taskNodeList := range p.TaskNodeList {
+					for _, tNode := range taskNodeList {
+						base.CrawlerDropped.Add(1)
+						tNode.CrawlerDropped.Add(1)
+					}
+				}
 			}
 		}
 	}

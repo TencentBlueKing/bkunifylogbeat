@@ -16,9 +16,10 @@ var (
 	filterMaps = map[string]*Filters{}
 	mtx        sync.RWMutex
 
-	numOfFilterTotal = bkmonitoring.NewInt("task_filter_total") // 当前全局filter的数量
+	numOfFilterTotal = bkmonitoring.NewInt("num_filter_total") // 当前全局filter的数量
 
-	crawlerDropped = bkmonitoring.NewInt("crawler_dropped") // 被过滤的总数
+	filterDroppedTotal = bkmonitoring.NewInt("filter_dropped_total") // 被过滤的总数
+	filterHandledTotal = bkmonitoring.NewInt("filter_handled_total") // 被处理的总数
 )
 
 type Filters struct {
@@ -31,7 +32,7 @@ type Filters struct {
 }
 
 // GetFilters get filter
-func GetFilters(taskCfg *config.TaskConfig, leafNode *base.Node) (*Filters, error) {
+func GetFilters(taskCfg *config.TaskConfig, taskNode *base.TaskNode) (*Filters, error) {
 	var (
 		ok  bool
 		fil *Filters
@@ -44,19 +45,20 @@ func GetFilters(taskCfg *config.TaskConfig, leafNode *base.Node) (*Filters, erro
 	}()
 
 	if ok {
-		p, err := processor.GetProcessors(taskCfg, leafNode)
+		p, err := processor.GetProcessors(taskCfg, taskNode)
 		if err != nil {
 			return nil, err
 		}
 
 		fil.MergeFilterConfig(taskCfg)
 		fil.AddOutput(p.Node)
+		fil.AddTaskNode(p.Node, taskNode)
 		return fil, nil
 	}
-	return NewFilters(taskCfg, leafNode)
+	return NewFilters(taskCfg, taskNode)
 }
 
-func NewFilters(taskCfg *config.TaskConfig, leafNode *base.Node) (*Filters, error) {
+func NewFilters(taskCfg *config.TaskConfig, taskNode *base.TaskNode) (*Filters, error) {
 	var err error
 	var fil = &Filters{
 		Node:      base.NewEmptyNode(taskCfg.FilterID),
@@ -66,11 +68,12 @@ func NewFilters(taskCfg *config.TaskConfig, leafNode *base.Node) (*Filters, erro
 	}
 	fil.MergeFilterConfig(taskCfg)
 
-	p, err := processor.NewProcessors(taskCfg, leafNode)
+	p, err := processor.NewProcessors(taskCfg, taskNode)
 	if err != nil {
 		return nil, err
 	}
 	fil.AddOutput(p.Node)
+	fil.AddTaskNode(p.Node, taskNode)
 
 	go fil.Run()
 
@@ -126,6 +129,7 @@ func (f *Filters) Run() {
 						logp.L.Infof("node filter(%s) is done", f.ID)
 						return
 					case out <- data:
+						filterHandledTotal.Add(1)
 					}
 				}
 				break
@@ -136,7 +140,17 @@ func (f *Filters) Run() {
 			for processorID, taskConfig := range f.taskConfigMaps {
 				event := f.Handle(words, text, taskConfig, event)
 				if event == nil {
-					crawlerDropped.Add(1)
+					// update metric
+					{
+						filterDroppedTotal.Add(1)
+						taskNodeList, ok := f.TaskNodeList[processorID]
+						if ok {
+							for _, tNode := range taskNodeList {
+								base.CrawlerDropped.Add(1)
+								tNode.CrawlerDropped.Add(1)
+							}
+						}
+					}
 					continue
 				}
 
@@ -147,6 +161,7 @@ func (f *Filters) Run() {
 						logp.L.Infof("node filter(%s) is done", f.ID)
 						return
 					case out <- data:
+						filterHandledTotal.Add(1)
 					}
 				}
 			}

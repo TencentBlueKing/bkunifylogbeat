@@ -31,44 +31,51 @@ import (
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/bkmonitoring"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
 	"github.com/elastic/beats/filebeat/input/file"
-	"github.com/elastic/beats/libbeat/monitoring"
-)
-
-var (
-	crawlerSendTotal = bkmonitoring.NewInt("crawler_send_total")
 )
 
 // Task 采集任务具体实现，负责filebeat采集事件处理、过滤、打包，并发送到采集框架
 type Task struct {
-	*base.Node
+	*base.TaskNode
 
 	Config   *cfg.TaskConfig
 	beatDone chan struct{}
 
 	input *input.Input
-
-	crawlerSendTotal *monitoring.Int //正常事件总数
 }
 
 // NewTask 生成采集任务实例
 func NewTask(config *cfg.TaskConfig, beatDone chan struct{}, lastStates []file.State) (*Task, error) {
 	task := &Task{
-		Node: &base.Node{
-			ID: config.ID,
+		TaskNode: &base.TaskNode{
+			Node: &base.Node{
+				ID: config.ID,
 
-			In:   make(chan interface{}),
-			Outs: make(map[string]chan interface{}),
+				In:   make(chan interface{}),
+				Outs: make(map[string]chan interface{}),
 
-			End: make(chan struct{}),
+				End: make(chan struct{}),
+
+				TaskNodeList: map[string]map[string]*base.TaskNode{},
+			},
+
+			// Crawler metrics
+			CrawlerReceived:  bkmonitoring.NewIntWithDataID(config.DataID, "crawler_received"),
+			CrawlerState:     bkmonitoring.NewIntWithDataID(config.DataID, "crawler_state"),
+			CrawlerSendTotal: bkmonitoring.NewIntWithDataID(config.DataID, "crawler_send_total"),
+			CrawlerDropped:   bkmonitoring.NewIntWithDataID(config.DataID, "crawler_dropped"),
+
+			// sender metrics
+			SenderReceive:   bkmonitoring.NewIntWithDataID(config.DataID, "sender_received"),
+			SenderState:     bkmonitoring.NewIntWithDataID(config.DataID, "sender_state"),
+			SenderSendTotal: bkmonitoring.NewIntWithDataID(config.DataID, "sender_send_total"),
 		},
 
 		Config:   config,
 		beatDone: beatDone,
 	}
-	task.crawlerSendTotal = bkmonitoring.NewIntWithDataID(config.DataID, "crawler_send_total")
 
 	var err error
-	task.input, err = input.GetInput(task.Config, task.Node, task.End, lastStates)
+	task.input, err = input.GetInput(task.Config, task.TaskNode, task.End, lastStates)
 	if err != nil {
 		return nil, fmt.Errorf("[%s] error while get input: %s", task.ID, err)
 	}
@@ -96,8 +103,7 @@ func (task *Task) Run() {
 			logp.L.Infof("task(%s) is done", task.ID)
 			return
 		case event := <-task.In:
-			crawlerSendTotal.Add(1)
-			task.crawlerSendTotal.Add(1)
+			base.CrawlerPackageSendTotal.Add(1)
 			beat.SendEvent(event.(beat.Event))
 		}
 	}
@@ -107,7 +113,7 @@ func (task *Task) Run() {
 func (task *Task) Stop() error {
 	logp.L.Infof("task(%s) is Stop", task.ID)
 	task.ParentNode.RemoveOutput(task.Node)
-	task.crawlerSendTotal.Set(0)
+	task.ParentNode.RemoveTaskNode(task.Node, task.TaskNode)
 	return nil
 }
 

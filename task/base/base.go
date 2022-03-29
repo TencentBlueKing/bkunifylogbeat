@@ -2,7 +2,17 @@ package base
 
 import (
 	"fmt"
+	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/bkmonitoring"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
+	"github.com/elastic/beats/libbeat/monitoring"
+)
+
+var (
+	CrawlerSendTotal        = bkmonitoring.NewInt("crawler_send_total")         // 兼容指标，之前有使用这个作为发送的数量
+	CrawlerReceived         = bkmonitoring.NewInt("crawler_received")           // 兼容指标，接收到的所有事件数
+	CrawlerState            = bkmonitoring.NewInt("crawler_state")              // 兼容指标，接收到的所有事件中状态事件数量
+	CrawlerDropped          = bkmonitoring.NewInt("crawler_dropped")            // 兼容指标，丢弃数量
+	CrawlerPackageSendTotal = bkmonitoring.NewInt("crawler_package_send_total") // 打包发送的数量
 )
 
 type NodeI interface {
@@ -20,6 +30,21 @@ type Node struct {
 	In   chan interface{}
 
 	End chan struct{}
+
+	TaskNodeList map[string]map[string]*TaskNode
+}
+
+type TaskNode struct {
+	*Node
+
+	CrawlerReceived  *monitoring.Int //state事件
+	CrawlerState     *monitoring.Int //state事件
+	CrawlerSendTotal *monitoring.Int //正常事件总数
+	CrawlerDropped   *monitoring.Int //过滤掉的事件总数
+
+	SenderReceive   *monitoring.Int // 接收的事件数
+	SenderSendTotal *monitoring.Int // 发送到pipeline的数量
+	SenderState     *monitoring.Int // 仅需要更新采集状态的事件数(event.Field为空)
 }
 
 func NewEmptyNode(id string) *Node {
@@ -31,6 +56,8 @@ func NewEmptyNode(id string) *Node {
 		Outs: make(map[string]chan interface{}),
 
 		End: make(chan struct{}),
+
+		TaskNodeList: map[string]map[string]*TaskNode{},
 	}
 }
 
@@ -39,6 +66,35 @@ func (n *Node) String() string {
 		return fmt.Sprintf("%s -> %s", n.ParentNode, n.ID)
 	} else {
 		return n.ID
+	}
+}
+
+func (n *Node) AddTaskNode(nextNode *Node, taskNode *TaskNode) {
+	if nextNode == nil || taskNode == nil {
+		return
+	}
+	nextNodeToTaskNodeList, ok := n.TaskNodeList[nextNode.ID]
+	if !ok {
+		nextNodeToTaskNodeList = map[string]*TaskNode{
+			taskNode.ID: taskNode,
+		}
+		n.TaskNodeList[nextNode.ID] = nextNodeToTaskNodeList
+	} else {
+		nextNodeToTaskNodeList[taskNode.ID] = taskNode
+	}
+}
+
+func (n *Node) RemoveTaskNode(nextNode *Node, taskNode *TaskNode) {
+	if nextNode == nil || taskNode == nil {
+		return
+	}
+
+	if n.ParentNode != nil {
+		n.ParentNode.RemoveTaskNode(n, taskNode)
+	}
+	delete(n.TaskNodeList[nextNode.ID], taskNode.ID)
+	if len(n.TaskNodeList[nextNode.ID]) == 0 {
+		delete(n.TaskNodeList, nextNode.ID)
 	}
 }
 

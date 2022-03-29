@@ -25,8 +25,10 @@ var (
 	mtx       sync.RWMutex
 
 	numOfInputTotal = bkmonitoring.NewInt("task_input_total") // 当前全局input的数量
-	crawlerReceived = bkmonitoring.NewInt("crawler_received") // 接收到的所有事件数
-	crawlerState    = bkmonitoring.NewInt("crawler_state")    // 接收到的所有事件中状态事件数量
+
+	// input 没有做处理，没有丢弃的可能，所以不上报这个指标
+	//inputDroppedTotal = bkmonitoring.NewInt("input_dropped_total")
+	inputHandledTotal = bkmonitoring.NewInt("input_handled_total")
 )
 
 // SetResourceLimit 在一定程度上限制CPU使用
@@ -60,7 +62,7 @@ func SetResourceLimit(maxCpuLimit, checkTimes int) {
 
 func GetInput(
 	taskCfg *config.TaskConfig,
-	leafNode *base.Node,
+	taskNode *base.TaskNode,
 	beatDone chan struct{},
 	states []file.State,
 ) (*Input, error) {
@@ -76,31 +78,33 @@ func GetInput(
 	}()
 
 	if ok {
-		f, err := filter.GetFilters(taskCfg, leafNode)
+		f, err := filter.GetFilters(taskCfg, taskNode)
 		if err != nil {
 			return nil, err
 		}
 		in.AddOutput(f.Node)
+		in.AddTaskNode(f.Node, taskNode)
 		return in, nil
 	}
 
-	return NewInput(taskCfg, leafNode, beatDone, states)
+	return NewInput(taskCfg, taskNode, beatDone, states)
 }
 
 func NewInput(
 	taskCfg *config.TaskConfig,
-	leafNode *base.Node,
+	taskNode *base.TaskNode,
 	beatDone chan struct{},
 	states []file.State,
 ) (*Input, error) {
 	var err error
 	var in = &Input{Node: base.NewEmptyNode(taskCfg.InputID)}
 
-	f, err := filter.NewFilters(taskCfg, leafNode)
+	f, err := filter.NewFilters(taskCfg, taskNode)
 	if err != nil {
 		return nil, err
 	}
 	in.AddOutput(f.Node)
+	in.AddTaskNode(f.Node, taskNode)
 	go in.Run()
 
 	// input.New 里会发送事件出来，需要先创建好后续的Output，再创建Input
@@ -165,7 +169,7 @@ func (in *Input) Run() {
 				}
 			}
 
-			crawlerReceived.Add(1)
+			base.CrawlerReceived.Add(1)
 
 			data := e.(*util.Data)
 			if data.Event.Fields != nil {
@@ -174,11 +178,22 @@ func (in *Input) Run() {
 					case <-in.End:
 						return
 					case out <- data:
+						inputHandledTotal.Add(1)
+						for _, taskNodeList := range in.TaskNodeList {
+							for _, tNode := range taskNodeList {
+								tNode.CrawlerReceived.Add(1)
+							}
+						}
 					}
 				}
 			} else {
 				// 采集进度类事件
-				crawlerState.Add(1)
+				base.CrawlerState.Add(1)
+				for _, taskNodeList := range in.TaskNodeList {
+					for _, tNode := range taskNodeList {
+						tNode.CrawlerState.Add(1)
+					}
+				}
 			}
 		}
 	}

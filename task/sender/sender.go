@@ -37,14 +37,17 @@ import (
 )
 
 var (
-	senderReceived  = bkmonitoring.NewInt("sender_received")
-	senderState     = bkmonitoring.NewInt("sender_state")
-	senderSendTotal = bkmonitoring.NewInt("sender_send_total")
+	senderReceived  = bkmonitoring.NewInt("sender_received")   // 兼容指标
+	senderState     = bkmonitoring.NewInt("sender_state")      // 兼容指标
+	senderSendTotal = bkmonitoring.NewInt("sender_send_total") // 兼容指标
 
 	senderMaps = map[string]*Sender{}
 	mtx        sync.RWMutex
 
 	numOfSenderTotal = bkmonitoring.NewInt("task_sender_total") // 当前全局sender的数量
+
+	senderDroppedTotal = bkmonitoring.NewInt("send_dropped_total")
+	senderHandledTotal = bkmonitoring.NewInt("send_handled_total")
 )
 
 // Sender : 对采集事件进行打包, 并调用beat发送事件
@@ -60,7 +63,7 @@ type Sender struct {
 	taskConfigMaps map[string]*config.TaskConfig
 }
 
-func GetSender(taskCfg *config.TaskConfig, leafNode *base.Node) (*Sender, error) {
+func GetSender(taskCfg *config.TaskConfig, taskNode *base.TaskNode) (*Sender, error) {
 	var (
 		ok   bool
 		send *Sender
@@ -77,13 +80,14 @@ func GetSender(taskCfg *config.TaskConfig, leafNode *base.Node) (*Sender, error)
 		if err != nil {
 			return nil, err
 		}
-		send.AddOutput(leafNode)
+		send.AddOutput(taskNode.Node)
+		send.AddTaskNode(taskNode.Node, taskNode)
 		return send, nil
 	}
-	return NewSender(taskCfg, leafNode)
+	return NewSender(taskCfg, taskNode)
 }
 
-func NewSender(taskCfg *config.TaskConfig, leafNode *base.Node) (*Sender, error) {
+func NewSender(taskCfg *config.TaskConfig, taskNode *base.TaskNode) (*Sender, error) {
 	var err error
 	var send = &Sender{
 		Node: base.NewEmptyNode(taskCfg.SenderID),
@@ -98,7 +102,8 @@ func NewSender(taskCfg *config.TaskConfig, leafNode *base.Node) (*Sender, error)
 		return nil, err
 	}
 
-	send.AddOutput(leafNode)
+	send.AddOutput(taskNode.Node)
+	send.AddTaskNode(taskNode.Node, taskNode)
 
 	go send.Run()
 
@@ -171,7 +176,17 @@ func (send *Sender) Run() {
 			send.cache = make(map[string][]*util.Data)
 
 		case e := <-send.In:
-			senderReceived.Add(1)
+			// update metric
+			{
+				base.CrawlerSendTotal.Add(1)
+				senderReceived.Add(1)
+				for _, taskNodeList := range send.TaskNodeList {
+					for _, tNode := range taskNodeList {
+						tNode.CrawlerSendTotal.Add(1)
+						tNode.SenderReceive.Add(1)
+					}
+				}
+			}
 			event := e.(*util.Data)
 			err := send.cacheSend(event)
 			if err != nil {
@@ -238,6 +253,7 @@ func (send *Sender) send(events []*util.Data) {
 	for taskID, out := range send.Outs {
 		taskConfig, ok := send.taskConfigMaps[taskID]
 		if !ok {
+			senderDroppedTotal.Add(1)
 			logp.L.Errorf("send to out error, out's taskConfig is nil, %s", taskID)
 			continue
 		}
@@ -246,11 +262,16 @@ func (send *Sender) send(events []*util.Data) {
 		data["dataid"] = taskConfig.DataID
 		//处理状态事件
 		if data == nil {
-			senderState.Add(1)
-
 			packageEvent = beat.Event{
 				Fields:  nil,
 				Private: lastState,
+			}
+
+			senderState.Add(1)
+			for _, taskNodeList := range send.TaskNodeList {
+				for _, tNode := range taskNodeList {
+					tNode.SenderState.Add(1)
+				}
 			}
 		} else {
 			packageEvent = beat.Event{
@@ -259,12 +280,18 @@ func (send *Sender) send(events []*util.Data) {
 			}
 			// 发送到pipeline的数量
 			senderSendTotal.Add(1)
+			for _, taskNodeList := range send.TaskNodeList {
+				for _, tNode := range taskNodeList {
+					tNode.SenderSendTotal.Add(1)
+				}
+			}
 		}
 		select {
 		case <-send.End:
 			logp.L.Infof("node filter(%s) is done", send.ID)
 			return
 		case out <- packageEvent:
+			senderHandledTotal.Add(1)
 		}
 	}
 }
