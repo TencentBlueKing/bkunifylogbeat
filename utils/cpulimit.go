@@ -32,6 +32,15 @@ import (
 	"github.com/shirou/gopsutil/process"
 )
 
+var (
+	IsEnableRateLimiter bool      // 是否开启速率限制
+	GlobalCpuLimiter    *CPULimit // CPU使用率限制
+)
+
+const (
+	MaxCheckTimes = 10
+)
+
 type CPULimit struct {
 	limit         int // cpu limit percent
 	checkTimes    int // check cpu usage in one second
@@ -43,11 +52,7 @@ type CPULimit struct {
 	done      chan struct{}
 }
 
-const (
-	MaxCheckTimes = 10
-)
-
-// NewCPULimit: new cpu limit object
+// NewCPULimit : new cpu limit object
 func NewCPULimit(l, checkTimes int) *CPULimit {
 	if checkTimes < 1 || checkTimes > MaxCheckTimes {
 		checkTimes = MaxCheckTimes
@@ -65,7 +70,7 @@ func NewCPULimit(l, checkTimes int) *CPULimit {
 	return cpuLimit
 }
 
-// Start: start cpu limit
+// Start : start cpu limit
 func (c *CPULimit) Start() {
 	logp.L.Info("start cpu limit.")
 
@@ -137,7 +142,7 @@ func (c *CPULimit) Start() {
 	}()
 }
 
-// Stop: stop cpu limit
+// Stop : stop cpu limit
 func (c *CPULimit) Stop() {
 	c.closeOnce.Do(func() {
 		close(c.done)
@@ -145,12 +150,41 @@ func (c *CPULimit) Stop() {
 	logp.L.Info("stop cpu limit.")
 }
 
-// Allow: judge current
+// Allow : judge current
 func (c *CPULimit) Allow() bool {
 	return c.isAllowRun
 }
 
-// GetCheckInterval: get cpu check interval
+// GetCheckInterval : get cpu check interval
 func (c *CPULimit) GetCheckInterval() time.Duration {
 	return c.checkInterval
+}
+
+// SetResourceLimit 在一定程度上限制CPU使用
+func SetResourceLimit(maxCpuLimit, checkTimes int) {
+	numCPU := runtime.NumCPU()
+	// 在docker富容器中 并且 开启了速率限制
+	if IsInDocker() {
+		logp.L.Infof("enable rate limit. because numOfCpu(%d) && isInDocker(%v)",
+			numCPU, true,
+		)
+
+		if maxCpuLimit > 0 && maxCpuLimit <= numCPU*100 {
+			GlobalCpuLimiter = NewCPULimit(maxCpuLimit, checkTimes)
+			IsEnableRateLimiter = true
+		} else {
+			logp.L.Infof("disable rate limit. because cpu limit config(%d) is not valid",
+				maxCpuLimit,
+			)
+		}
+	} else {
+		logp.L.Infof("disable rate limit. because numOfCpu(%d) && isInDocker(%v), "+
+			"cpu limit config(%d)",
+			numCPU, false, maxCpuLimit,
+		)
+		if GlobalCpuLimiter != nil {
+			GlobalCpuLimiter.Stop()
+		}
+		IsEnableRateLimiter = false
+	}
 }

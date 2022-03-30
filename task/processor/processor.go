@@ -24,6 +24,8 @@ package processor
 
 import (
 	"fmt"
+	"sync"
+
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/sender"
@@ -32,7 +34,6 @@ import (
 	"github.com/elastic/beats/filebeat/util"
 	"github.com/elastic/beats/libbeat/beat"
 	process "github.com/elastic/beats/libbeat/processors"
-	"sync"
 )
 
 var (

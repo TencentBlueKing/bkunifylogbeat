@@ -1,6 +1,9 @@
 package filter
 
 import (
+	"strings"
+	"sync"
+
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/processor"
@@ -8,8 +11,6 @@ import (
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/bkmonitoring"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
 	"github.com/elastic/beats/filebeat/util"
-	"strings"
-	"sync"
 )
 
 var (

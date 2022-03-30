@@ -1,6 +1,9 @@
 package input
 
 import (
+	"sync"
+	"time"
+
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/filter"
@@ -12,15 +15,9 @@ import (
 	"github.com/elastic/beats/filebeat/input/file"
 	"github.com/elastic/beats/filebeat/util"
 	"github.com/elastic/beats/libbeat/common"
-	"runtime"
-	"sync"
-	"time"
 )
 
 var (
-	isEnableRateLimiter bool            // 是否开启速率限制
-	cpuLimiter          *utils.CPULimit // CPU使用率限制
-
 	inputMaps = map[string]*Input{}
 	mtx       sync.RWMutex
 
@@ -30,35 +27,6 @@ var (
 	//inputDroppedTotal = bkmonitoring.NewInt("input_dropped_total")
 	inputHandledTotal = bkmonitoring.NewInt("input_handled_total")
 )
-
-// SetResourceLimit 在一定程度上限制CPU使用
-func SetResourceLimit(maxCpuLimit, checkTimes int) {
-	numCPU := runtime.NumCPU()
-	// 在docker富容器中 并且 开启了速率限制
-	if utils.IsInDocker() {
-		logp.L.Infof("enable rate limit. because numOfCpu(%d) && isInDocker(%v)",
-			numCPU, true,
-		)
-
-		if maxCpuLimit > 0 && maxCpuLimit <= numCPU*100 {
-			cpuLimiter = utils.NewCPULimit(maxCpuLimit, checkTimes)
-			isEnableRateLimiter = true
-		} else {
-			logp.L.Infof("disable rate limit. because cpu limit config(%d) is not valid",
-				maxCpuLimit,
-			)
-		}
-	} else {
-		logp.L.Infof("disable rate limit. because numOfCpu(%d) && isInDocker(%v), "+
-			"cpu limit config(%d)",
-			numCPU, false, maxCpuLimit,
-		)
-		if cpuLimiter != nil {
-			cpuLimiter.Stop()
-		}
-		isEnableRateLimiter = false
-	}
-}
 
 func GetInput(
 	taskCfg *config.TaskConfig,
@@ -158,10 +126,10 @@ func (in *Input) Run() {
 			return
 		case e := <-in.In:
 			// 处理速率限制，可在一定层度上限制CPU的使用率
-			if isEnableRateLimiter && cpuLimiter != nil {
-				checkInterval := cpuLimiter.GetCheckInterval()
+			if utils.IsEnableRateLimiter && utils.GlobalCpuLimiter != nil {
+				checkInterval := utils.GlobalCpuLimiter.GetCheckInterval()
 				for {
-					if cpuLimiter.Allow() {
+					if utils.GlobalCpuLimiter.Allow() {
 						break
 					} else {
 						time.Sleep(checkInterval)

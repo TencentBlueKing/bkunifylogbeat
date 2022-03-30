@@ -24,15 +24,15 @@ package beater
 
 import (
 	"fmt"
-	"github.com/TencentBlueKing/bkunifylogbeat/task/input"
-	"github.com/elastic/beats/filebeat/input/file"
 	"sync"
 
 	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/registrar"
 	"github.com/TencentBlueKing/bkunifylogbeat/task"
+	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/bkmonitoring"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
+	"github.com/elastic/beats/filebeat/input/file"
 	"github.com/elastic/beats/libbeat/monitoring"
 )
 
@@ -70,7 +70,7 @@ func (m *Manager) Start() error {
 	var err error
 	logp.L.Info("start manager")
 
-	input.SetResourceLimit(m.config.MaxCpuLimit, m.config.CpuCheckTimes)
+	utils.SetResourceLimit(m.config.MaxCpuLimit, m.config.CpuCheckTimes)
 
 	// Task
 	lastStates := registrar.ResetStates(Registrar.GetStates())
@@ -101,7 +101,7 @@ func (m *Manager) Stop() error {
 func (m *Manager) Reload(config cfg.Config) {
 	logp.L.Infof("[Reload]update config, current tasks=>%d", len(m.tasks))
 
-	input.SetResourceLimit(config.MaxCpuLimit, config.CpuCheckTimes)
+	utils.SetResourceLimit(config.MaxCpuLimit, config.CpuCheckTimes)
 
 	lastStates := registrar.ResetStates(Registrar.GetStates())
 	newTasks := cfg.GetTasks(config)
