@@ -23,16 +23,46 @@
 package filter
 
 import (
+	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
+	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
+	libbeatlogp "github.com/elastic/beats/libbeat/logp"
 	"testing"
+	"time"
 
 	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/tests"
-	"github.com/stretchr/testify/assert"
 )
 
+var (
+	event beat.Event
+)
+
+func init() {
+	logp.SetLogger(libbeatlogp.L())
+}
+
+func newFilter(taskFilterConfig map[string]interface{}) *Filters {
+	config, err := cfg.CreateTaskConfig(taskFilterConfig)
+	if err != nil {
+		panic(err)
+	}
+
+	taskNode := tests.MockTaskNode(config)
+	go func() {
+		for {
+			e := <-taskNode.In
+			event = e.(beat.Event)
+		}
+	}()
+
+	filter, _ := NewFilters(config, taskNode)
+	return filter
+}
+
 //TestFilter: 测试原过滤器兼容
-func TestFilter(t *testing.T) {
-	vars := map[string]interface{}{
+func TestNewFilters(t *testing.T) {
+	event = beat.Event{}
+	filter := newFilter(map[string]interface{}{
 		"dataid":    "999990001",
 		"delimiter": "|",
 		"filters": []cfg.FilterConfig{
@@ -46,56 +76,90 @@ func TestFilter(t *testing.T) {
 				},
 			},
 		},
+	})
+
+	if filter == nil {
+		t.Error("new filter error, not nil")
 	}
-	config, err := cfg.CreateTaskConfig(vars)
-	if err != nil {
-		panic(err)
-	}
-	filter := NewFilters(config)
+}
 
-	//case 1: 必须包含test才会上报
-	data := tests.MockLogEvent("/test.log", "test")
-	event := filter.Run(&data.Event)
-	assert.NotNil(t, event)
-
-	//case 2: 没有包含test所以会直接过滤
-	data = tests.MockLogEvent("/test.log", "data")
-	event = filter.Run(&data.Event)
-	assert.Nil(t, event)
-
-	//case 3: 组合条件上报
-	vars["filters"] = []cfg.FilterConfig{
-		{
-			Conditions: []cfg.ConditionConfig{
-				{
-					Index: 1,
-					Key:   "debug",
-					Op:    "!=",
-				},
-				{
-					Index: 2,
-					Key:   "test",
-					Op:    "=",
+func TestFilters_Handle(t *testing.T) {
+	event = beat.Event{}
+	filter := newFilter(map[string]interface{}{
+		"dataid":    "999990001",
+		"delimiter": "|",
+		"filters": []cfg.FilterConfig{
+			{
+				Conditions: []cfg.ConditionConfig{
+					{
+						Index: -1,
+						Key:   "test",
+						Op:    "=",
+					},
 				},
 			},
 		},
-	}
-	config, err = cfg.CreateTaskConfig(vars)
-	if err != nil {
-		panic(err)
-	}
-	filter = NewFilters(config)
+	})
 
-	//case 3: 只上报非debug并且包含test的事件
+	// not match
+	data := tests.MockLogEvent("/test.log", "not match log text")
+	filter.In <- data
+	time.Sleep(2 * time.Second)
+
+	if event.Fields != nil {
+		t.Error("filter must not match.")
+		return
+	}
+
+	// match
+	data = tests.MockLogEvent("/test.log", "test")
+	filter.In <- data
+	time.Sleep(2 * time.Second)
+
+	if event.Fields == nil {
+		t.Error("filter error. not effect")
+		return
+	}
+}
+
+func TestFilters_Handle_Multi_Condition(t *testing.T) {
+	event = beat.Event{}
+	filter := newFilter(map[string]interface{}{
+		"dataid":    "999990001",
+		"delimiter": "|",
+		"filters": []cfg.FilterConfig{
+			{
+				Conditions: []cfg.ConditionConfig{
+					{
+						Index: 1,
+						Key:   "debug",
+						Op:    "!=",
+					},
+					{
+						Index: 2,
+						Key:   "test",
+						Op:    "=",
+					},
+				},
+			},
+		},
+	})
+
+	// not match condition
+	data := tests.MockLogEvent("/test.log", "debug|test")
+	filter.In <- data
+	time.Sleep(2 * time.Second)
+	if event.Fields != nil {
+		t.Error("filter error. not effect")
+		return
+	}
+
+	// match condition
 	data = tests.MockLogEvent("/test.log", "info|test")
-	event = filter.Run(&data.Event)
-	assert.NotNil(t, event)
-
-	data = tests.MockLogEvent("/test.log", "debug|test")
-	event = filter.Run(&data.Event)
-	assert.Nil(t, event)
-
-	data = tests.MockLogEvent("/test.log", "info|data")
-	event = filter.Run(&data.Event)
-	assert.Nil(t, event)
+	filter.In <- data
+	time.Sleep(2 * time.Second)
+	if event.Fields == nil {
+		t.Error("filter error. not effect")
+		return
+	}
 }
