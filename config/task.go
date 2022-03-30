@@ -24,15 +24,13 @@ package config
 
 import (
 	"fmt"
-	"path/filepath"
-	"sort"
-	"time"
-
 	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/libbeat/processors"
+	"path/filepath"
+	"sort"
 )
 
 // ConditionConfig : 用于条件表达式，目前支持=、!=
@@ -56,14 +54,8 @@ func (a ConditionSortByIndex) Len() int { return len(a) }
 // Swap swaps the elements with indexes i and j.
 func (a ConditionSortByIndex) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 
-// Less is the number of elements in the collection.
+// Less compare
 func (a ConditionSortByIndex) Less(i, j int) bool { return a[i].Index < a[j].Index }
-
-type InputConfig struct {
-	ScanFrequency time.Duration `config:"scan_frequency" validate:"min=0,nonzero"`
-	Type          string        `config:"type"`
-	InputType     string        `config:"input_type"`
-}
 
 type ProcessorConfig struct {
 	Processors processors.PluginConfig `config:"processors"`
@@ -86,30 +78,21 @@ type SenderConfig struct {
 	OutputFormat     string `config:"output_format"`      // 输出格式，为了兼容老版采集器的输出格式
 }
 
-func (s *SenderConfig) IsSame() bool {
-	return false
-}
-
 // TaskConfig 采集任务配置
 type TaskConfig struct {
 	ID     string
 	Type   string `config:"type"`
 	DataID int    `config:"dataid"`
 
-	// Processor
-	ProcessorID     string // 用来标识配置的唯一性
 	ProcessorConfig `config:",inline"`
+	FiltersConfig   `config:",inline"`
+	SenderConfig    `config:",inline"`
 
-	// Filter
-	FilterID      string
-	FiltersConfig `config:",inline"`
-
-	// Sender
-	SenderID     string
-	SenderConfig `config:",inline"`
-
-	// Input
-	InputID string
+	// 用来标识配置的唯一性
+	InputID     string
+	FilterID    string
+	ProcessorID string
+	SenderID    string
 
 	RawConfig *beat.Config
 }

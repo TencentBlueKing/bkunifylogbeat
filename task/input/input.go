@@ -192,7 +192,7 @@ func (in *Input) Run() {
 // stop : 停止runner
 // 停用的场景:
 //   1. 当outs为空后，自动退出
-//   2. 当End的channel并主动关闭后
+//   2. 当End的channel被主动关闭后
 func (in *Input) stop() {
 	in.stopOnce.Do(func() {
 		in.runner.Stop()

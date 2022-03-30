@@ -124,9 +124,6 @@ func RemoveSender(id string) {
 	numOfSenderTotal.Add(-1)
 }
 
-// PublisherFunc : 接收采集事件并发送到outlet
-type PublisherFunc func(beat.Event) bool
-
 // MergeSenderConfig 生成采集器Sender实例
 // 理论上Merge这里不存在任何动作，因为Sender的配置是一样的
 func (send *Sender) MergeSenderConfig(taskCfg *config.TaskConfig) error {
@@ -258,10 +255,7 @@ func (send *Sender) send(events []*util.Data) {
 			continue
 		}
 
-		data := formattedEvent.Clone()
-		data["dataid"] = taskConfig.DataID
-		//处理状态事件
-		if data == nil {
+		if formattedEvent == nil {
 			packageEvent = beat.Event{
 				Fields:  nil,
 				Private: lastState,
@@ -274,6 +268,10 @@ func (send *Sender) send(events []*util.Data) {
 				}
 			}
 		} else {
+			data := formattedEvent.Clone()
+			data["dataid"] = taskConfig.DataID
+
+			//处理状态事件
 			packageEvent = beat.Event{
 				Fields:  data,
 				Private: lastState,
@@ -288,7 +286,7 @@ func (send *Sender) send(events []*util.Data) {
 		}
 		select {
 		case <-send.End:
-			logp.L.Infof("node filter(%s) is done", send.ID)
+			logp.L.Infof("node send(%s) is done", send.ID)
 			return
 		case out <- packageEvent:
 			senderHandledTotal.Add(1)
