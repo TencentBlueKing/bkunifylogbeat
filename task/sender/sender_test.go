@@ -20,9 +20,10 @@
 // WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 // SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package task
+package sender
 
 import (
+	"github.com/TencentBlueKing/bkunifylogbeat/task/formatter"
 	"testing"
 	"time"
 
@@ -41,18 +42,17 @@ func init() {
 	initMockFormatter()
 }
 
-var sendNums int
-var fileSource1 string = "/tmp/test1.log"
-var fileSource2 string = "/tmp/test2.log"
-var fileText string = "test"
-var fileTextNull string = ""
-var packageCount int = 10
-var outputFormat = "v2"
+var (
+	sendNums     int
+	fileSource1  = "/tmp/test1.log"
+	fileSource2  = "/tmp/test2.log"
+	fileText     = "test"
+	fileTextNull = ""
+	packageCount = 10
+	outputFormat = "mock_v2"
 
-func mockPublisher(event beat.Event) bool {
-	sendNums += 1
-	return true
-}
+	event beat.Event
+)
 
 type mockFormatter struct {
 	taskConfig *config.TaskConfig
@@ -75,7 +75,7 @@ func (f mockFormatter) Format(events []*util.Data) beat.MapStr {
 }
 
 func initMockFormatter() {
-	err := FormatterRegister(outputFormat, func(config *config.TaskConfig) (Formatter, error) {
+	err := formatter.FormatterRegister(outputFormat, func(config *config.TaskConfig) (formatter.Formatter, error) {
 		return NewMockFormatter(config)
 	})
 	if err != nil {
@@ -83,38 +83,45 @@ func initMockFormatter() {
 	}
 }
 
-func mockSender(taskDone chan struct{}, canPackage bool, packageCount int) (*Sender, error) {
+func mockSender(canPackage bool, packageCount int) (*Sender, error) {
 	var err error
 	vars, err := common.NewConfigFrom(map[string]interface{}{
 		"dataid":        "999990001",
+		"output_format": outputFormat,
 		"package":       canPackage,
 		"package_count": packageCount,
 	})
 	if err != nil {
 		return nil, err
 	}
-	config, err := config.NewTaskConfig(vars)
+	taskConfig, err := config.NewTaskConfig(vars)
 	if err != nil {
 		return nil, err
 	}
 
-	sender, err := NewSender(config, taskDone, mockPublisher)
+	taskNode := tests.MockTaskNode(taskConfig)
+	go func() {
+		for {
+			e := <-taskNode.In
+			event = e.(beat.Event)
+			sendNums++
+		}
+	}()
+
+	sender, err := NewSender(taskConfig, taskNode)
 	if err != nil {
 		return nil, err
 	}
 
-	sender.Start()
 	return sender, nil
 }
 
 //TestSend: 测试打包发送
 func TestSend(t *testing.T) {
-	var taskDone chan struct{}
 	var sender *Sender
 	var err error
 
-	taskDone = make(chan struct{})
-	sender, err = mockSender(taskDone, false, packageCount)
+	sender, err = mockSender(false, packageCount)
 	if err != nil {
 		panic(err)
 		return
@@ -122,65 +129,62 @@ func TestSend(t *testing.T) {
 
 	// Send
 	sendNums = 0
-	sender.OnEvent(tests.MockLogEvent(fileSource1, fileText))
-	sender.OnEvent(tests.MockLogEvent(fileSource1, fileText))
-	sender.OnEvent(tests.MockLogEvent(fileSource2, fileText))
+	sender.In <- tests.MockLogEvent(fileSource1, fileText)
+	sender.In <- tests.MockLogEvent(fileSource1, fileText)
+	sender.In <- tests.MockLogEvent(fileSource2, fileText)
 
 	time.Sleep(500 * time.Millisecond)
 	assert.Equal(t, sendNums, 3)
+	assert.NotNil(t, event.Fields)
 
 	// Package send
-	close(taskDone)
-	taskDone = make(chan struct{})
-	sender, err = mockSender(taskDone, true, packageCount)
+	sender, err = mockSender(true, packageCount)
 	if err != nil {
 		panic(err)
 		return
 	}
 	sendNums = 0
-	sender.OnEvent(tests.MockLogEvent(fileSource1, fileText))
-	sender.OnEvent(tests.MockLogEvent(fileSource1, fileText))
-	sender.OnEvent(tests.MockLogEvent(fileSource1, fileText))
+	sender.In <- tests.MockLogEvent(fileSource1, fileText)
+	sender.In <- tests.MockLogEvent(fileSource1, fileText)
+	sender.In <- tests.MockLogEvent(fileSource1, fileText)
 	time.Sleep(1200 * time.Millisecond)
 	assert.Equal(t, sendNums, 1)
 
 	// Package send: diff file
 	sendNums = 0
-	sender.OnEvent(tests.MockLogEvent(fileSource1, fileText))
-	sender.OnEvent(tests.MockLogEvent(fileSource2, fileText))
-	sender.OnEvent(tests.MockLogEvent(fileSource1, fileText))
+	sender.In <- tests.MockLogEvent(fileSource1, fileText)
+	sender.In <- tests.MockLogEvent(fileSource2, fileText)
+	sender.In <- tests.MockLogEvent(fileSource1, fileText)
 	time.Sleep(1200 * time.Millisecond)
 	assert.Equal(t, sendNums, 2)
 
 	// Filter event
 	sendNums = 0
 	// No.1 event
-	sender.OnEvent(tests.MockLogEvent(fileSource1, fileTextNull))
+	sender.In <- tests.MockLogEvent(fileSource1, fileTextNull)
 	// No.2 event
-	sender.OnEvent(tests.MockLogEvent(fileSource1, fileText))
-	sender.OnEvent(tests.MockLogEvent(fileSource1, fileText))
-	sender.OnEvent(tests.MockLogEvent(fileSource1, fileTextNull))
+	sender.In <- tests.MockLogEvent(fileSource1, fileText)
+	sender.In <- tests.MockLogEvent(fileSource1, fileText)
+	sender.In <- tests.MockLogEvent(fileSource1, fileTextNull)
 	// No.3 event
-	sender.OnEvent(tests.MockLogEvent(fileSource1, fileTextNull))
+	sender.In <- tests.MockLogEvent(fileSource1, fileTextNull)
 	// No.4 event
-	sender.OnEvent(tests.MockLogEvent(fileSource1, fileTextNull))
+	sender.In <- tests.MockLogEvent(fileSource1, fileTextNull)
 	// No.5 event
-	sender.OnEvent(tests.MockLogEvent(fileSource1, fileText))
-	sender.OnEvent(tests.MockLogEvent(fileSource1, fileText))
+	sender.In <- tests.MockLogEvent(fileSource1, fileText)
+	sender.In <- tests.MockLogEvent(fileSource1, fileText)
 	time.Sleep(1200 * time.Millisecond)
 	assert.Equal(t, sendNums, 5)
 
 	// Package Count
-	close(taskDone)
-	taskDone = make(chan struct{})
-	sender, err = mockSender(taskDone, true, 2)
+	sender, err = mockSender(true, 2)
 	if err != nil {
 		panic(err)
 		return
 	}
 	sendNums = 0
 	for i := 0; i < 8; i++ {
-		sender.OnEvent(tests.MockLogEvent(fileSource1, fileText))
+		sender.In <- tests.MockLogEvent(fileSource1, fileText)
 	}
 	time.Sleep(200 * time.Millisecond)
 	assert.Equal(t, sendNums, 4)

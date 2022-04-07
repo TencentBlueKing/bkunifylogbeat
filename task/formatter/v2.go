@@ -27,11 +27,10 @@ package formatter
 import (
 	"encoding/json"
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
-	"github.com/TencentBlueKing/bkunifylogbeat/task"
 	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
+	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
 	"github.com/elastic/beats/filebeat/util"
-	"github.com/elastic/beats/libbeat/logp"
 	"strings"
 )
 
@@ -45,7 +44,7 @@ type v2Formatter struct {
 	taskConfig *config.TaskConfig
 }
 
-//NewV2Formatter: bkunifylogbeat日志采集输出格式
+//NewV2Formatter : bkunifylogbeat日志采集输出格式
 func NewV2Formatter(config *config.TaskConfig) (*v2Formatter, error) {
 	f := &v2Formatter{
 		taskConfig: config,
@@ -53,7 +52,7 @@ func NewV2Formatter(config *config.TaskConfig) (*v2Formatter, error) {
 	return f, nil
 }
 
-//Format: 最新格式兼容
+//Format : 最新格式兼容
 func (f v2Formatter) Format(events []*util.Data) beat.MapStr {
 	var (
 		datetime, utcTime string
@@ -90,7 +89,7 @@ func (f v2Formatter) Format(events []*util.Data) beat.MapStr {
 				jsonContent := ContainerStdoutFields{}
 				e := json.Unmarshal([]byte(content), &jsonContent)
 				if e != nil {
-					logp.Err("output format error, container stdout no json format, data(%s)", content)
+					logp.L.Errorf("output format error, container stdout no json format, data(%s)", content)
 				}
 				item["data"] = jsonContent.Log
 				item["stream"] = jsonContent.Stream
@@ -116,7 +115,7 @@ func (f v2Formatter) Format(events []*util.Data) beat.MapStr {
 
 func init() {
 	for _, name := range []string{"v2", "default"} {
-		err := task.FormatterRegister(name, func(config *config.TaskConfig) (task.Formatter, error) {
+		err := FormatterRegister(name, func(config *config.TaskConfig) (Formatter, error) {
 			return NewV2Formatter(config)
 		})
 		if err != nil {

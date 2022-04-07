@@ -28,6 +28,7 @@ package beater
 
 import (
 	"fmt"
+	"time"
 
 	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
 	// 加载 Filebeat Input插件及配置优化模块
@@ -46,6 +47,8 @@ type LogBeat struct {
 	done    chan struct{}
 	manager *Manager
 	config  cfg.Config
+
+	isReload bool
 }
 
 // New create cadvisor beat
@@ -60,6 +63,8 @@ func New(rawConfig *beat.Config) (*LogBeat, error) {
 	var bt = &LogBeat{
 		done:   make(chan struct{}),
 		config: config,
+
+		isReload: false,
 	}
 	mgr, err := NewManager(config, bt.done)
 	if nil != err {
@@ -95,14 +100,21 @@ func (bt *LogBeat) Run() error {
 		logp.L.Error("failed to start manager ")
 	}
 
+	reloadTicker := time.NewTicker(3 * time.Second)
+	defer reloadTicker.Stop()
 	for {
 		select {
 		// 处理采集器框架发送的重加载配置信号
-		case <-beat.ReloadChan:
-			config := beat.GetConfig()
-			if config != nil {
-				bt.Reload(config)
+		case <-reloadTicker.C:
+			if bt.isReload {
+				bt.isReload = false
+				config := beat.GetConfig()
+				if config != nil {
+					bt.Reload(config)
+				}
 			}
+		case <-beat.ReloadChan:
+			bt.isReload = true
 		// 处理采集器框架发送的结束采集器的信号（常由SIGINT引起），关闭采集器
 		case <-beat.Done:
 			bt.Stop()
