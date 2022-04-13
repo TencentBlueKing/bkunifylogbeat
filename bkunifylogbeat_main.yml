@@ -1,0 +1,25 @@
+##################### bkunifylogbeat Configuration #############################
+
+#==================== Main ================================================
+logging.level: error
+path.logs: /var/log
+path.data: /var/lib
+path.pid: /var/run
+
+#==================== Registry ================================================
+registry.flush: "1s"
+
+#==================== Output ================================================
+output.console:
+#output.bkpipe:
+#  endpoint: /var/run/ipc.state.report
+
+#==================== bkunifylogbeat ================================================
+bkunifylogbeat.maxbytes: 1024
+bkunifylogbeat.maxline: 12
+bkunifylogbeat.buffertimeout: 2
+bkunifylogbeat.eventdataid: -1
+bkunifylogbeat.multi_config:
+  - path: "/etc/bkunifylogbeat"
+    file_pattern: "*.conf"
+

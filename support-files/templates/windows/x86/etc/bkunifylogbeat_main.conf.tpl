@@ -2,6 +2,9 @@ logging.level: error
 max_procs: 1
 output.bkpipe:
   endpoint: {{ plugin_path.endpoint }}
+  hostip: {{ cmdb_instance.host.bk_host_innerip }}
+  cloudid: {{ cmdb_instance.host.bk_cloud_id[0].id if cmdb_instance.host.bk_cloud_id is iterable and cmdb_instance.host.bk_cloud_id is not string else cmdb_instance.host.bk_cloud_id }}
+
 path.logs: {{ plugin_path.log_path }}
 path.data: {{ plugin_path.data_path }}
 path.pid: {{ plugin_path.pid_path }}
