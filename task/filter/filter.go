@@ -160,6 +160,9 @@ func (f *Filters) Run() {
 
 			// index为N时，数组切分最少需要分成N+1段
 			words := strings.SplitN(text, f.Delimiter, f.filterMaxIndex+1)
+			for i := range words {
+				words[i] = strings.TrimSpace(words[i])
+			}
 			for processorID, taskConfig := range f.taskConfigMaps {
 				event := f.Handle(words, text, taskConfig, event)
 				if event == nil {
