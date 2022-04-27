@@ -83,6 +83,9 @@ func New(config cfg.Registry) (*Registrar, error) {
 func (r *Registrar) Init() error {
 	var states []file.State
 
+	// set flush interval
+	bkStorage.SetFlushInterval(r.flushTimeout)
+
 	// get time
 	str, err := bkStorage.Get(timeKey)
 	if err != nil {
