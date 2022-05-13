@@ -2,11 +2,11 @@ logging.level: error
 max_procs: 1
 output.bkpipe:
   endpoint: {{ plugin_path.endpoint }}
-{% if nodeman is defined %}
+{%- if nodeman is defined %}
   hostip: {{ nodeman.host.inner_ip }}
 {% else %}
   hostip: {{ cmdb_instance.host.bk_host_innerip }}
-{% endif %}
+{%- endif %}
   cloudid: {{ cmdb_instance.host.bk_cloud_id[0].id if cmdb_instance.host.bk_cloud_id is iterable and cmdb_instance.host.bk_cloud_id is not string else cmdb_instance.host.bk_cloud_id }}
 
 path.logs: {{ plugin_path.log_path }}
