@@ -77,7 +77,7 @@ func (f v2Formatter) Format(events []*util.Data) beat.MapStr {
 
 	var items []beat.MapStr
 	for index, event := range events {
-		item := event.Event.Fields
+		item := event.Event.Fields.Clone()
 		if item == nil {
 			continue
 		}
