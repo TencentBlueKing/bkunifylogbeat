@@ -150,5 +150,5 @@ func TestRegistrarIO(t *testing.T) {
 	//Step 5: 关闭并删除文件
 	registrar.Stop()
 	bkStorage.Close()
-	//os.Remove(testRegPath)
+	os.Remove(testRegPath)
 }
