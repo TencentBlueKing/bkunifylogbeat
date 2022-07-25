@@ -96,3 +96,59 @@ func TestRegistrar(t *testing.T) {
 	bkStorage.Close()
 	os.Remove(testRegPath)
 }
+
+func TestRegistrarIO(t *testing.T) {
+	testRegPath, err := filepath.Abs("../tests/registrar.bkpipe.db")
+	if err != nil {
+		panic(err)
+	}
+	// Step 1: 如果文件存在则直接删除
+	_, err = os.Stat(testRegPath)
+	if err != nil {
+		if os.IsExist(err) {
+			err = os.Remove(testRegPath)
+			if err != nil {
+				panic(err)
+			}
+		}
+	}
+
+	//Step 2: 初始化registrar
+	err = bkStorage.Init(testRegPath, nil)
+	if err != nil {
+		panic(err)
+	}
+
+	registrar, err := New(cfg.Registry{
+		FlushTimeout: 1 * time.Second,
+		GcFrequency:  60 * time.Second,
+	})
+	if err != nil {
+		panic(err)
+	}
+	err = registrar.Init()
+	if err != nil {
+		panic(err)
+	}
+	registrar.Start()
+
+	//Step 3: 写入事件
+	source := "/data/logs/test.log"
+
+	for i := 0; i < 100; i++ {
+		states := make([]file.State, 0)
+		for j := 0; j < 1000000; j++ {
+			data := tests.MockLogEvent(source, "test")
+			states = append(states, data.GetState())
+		}
+		registrar.Channel <- states
+	}
+
+	//Step 4：查看事件是否正常
+	time.Sleep(time.Second * 10)
+
+	//Step 5: 关闭并删除文件
+	registrar.Stop()
+	bkStorage.Close()
+	//os.Remove(testRegPath)
+}
