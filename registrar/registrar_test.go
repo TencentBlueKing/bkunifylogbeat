@@ -23,6 +23,7 @@
 package registrar
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -57,6 +58,20 @@ func TestRegistrar(t *testing.T) {
 		}
 	}
 
+	testOperationLogPath, err := filepath.Abs("../tests/operation.log")
+	if err != nil {
+		panic(err)
+	}
+	_, err = os.Stat(testOperationLogPath)
+	if err != nil {
+		if os.IsExist(err) {
+			err = os.Remove(testOperationLogPath)
+			if err != nil {
+				panic(err)
+			}
+		}
+	}
+
 	//Step 2: 初始化registrar
 	err = bkStorage.Init(testRegPath, nil)
 	if err != nil {
@@ -64,8 +79,9 @@ func TestRegistrar(t *testing.T) {
 	}
 
 	registrar, err := New(cfg.Registry{
-		FlushTimeout: 1 * time.Second,
-		GcFrequency:  1 * time.Second,
+		FlushTimeout:     1 * time.Second,
+		GcFrequency:      1 * time.Second,
+		OperationLogPath: testOperationLogPath,
 	})
 	if err != nil {
 		panic(err)
@@ -95,4 +111,78 @@ func TestRegistrar(t *testing.T) {
 	registrar.Stop()
 	bkStorage.Close()
 	os.Remove(testRegPath)
+}
+
+func TestRegistrarIO(t *testing.T) {
+	testRegPath, err := filepath.Abs("../tests/registrar.bkpipe.db")
+
+	if err != nil {
+		panic(err)
+	}
+	// Step 1: 如果文件存在则直接删除
+	_, err = os.Stat(testRegPath)
+	if err != nil {
+		if os.IsExist(err) {
+			err = os.Remove(testRegPath)
+			if err != nil {
+				panic(err)
+			}
+		}
+	}
+
+	testOperationLogPath, err := filepath.Abs("../tests/operation.log")
+	if err != nil {
+		panic(err)
+	}
+	_, err = os.Stat(testOperationLogPath)
+	if err != nil {
+		if os.IsExist(err) {
+			err = os.Remove(testOperationLogPath)
+			if err != nil {
+				panic(err)
+			}
+		}
+	}
+
+	//Step 2: 初始化registrar
+	err = bkStorage.Init(testRegPath, nil)
+	bkStorage.Set(timeKey, time.Now().Format(time.UnixDate), 0)
+
+	str, _ := json.Marshal(make([]file.State, 0))
+	bkStorage.Set(registrarKey, string(str), 0)
+	if err != nil {
+		panic(err)
+	}
+
+	registrar, err := New(cfg.Registry{
+		FlushTimeout:     20 * time.Minute,
+		GcFrequency:      20 * time.Minute,
+		OperationLogPath: testOperationLogPath,
+	})
+	if err != nil {
+		panic(err)
+	}
+	err = registrar.Init()
+	if err != nil {
+		panic(err)
+	}
+	registrar.Start()
+	source := "/data/logs/test.log"
+	for i := 0; i < 5; i++ {
+		states := make([]file.State, 0)
+		for j := 0; j < 10; j++ {
+			//Step 3: 写入事件
+			data := tests.MockLogEvent(source, "test")
+			states = append(states, data.GetState())
+		}
+		registrar.Channel <- states
+	}
+	time.Sleep(10 * time.Second)
+	Operations := registrar.loadOperation()
+	assert.Equal(t, len(Operations), 50)
+	//Step 5: 关闭并删除文件
+	registrar.Stop()
+	bkStorage.Close()
+	os.Remove(testRegPath)
+	os.Remove(testOperationLogPath)
 }

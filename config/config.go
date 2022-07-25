@@ -57,8 +57,9 @@ type SecConfigItem struct {
 
 // 采集状态
 type Registry struct {
-	FlushTimeout time.Duration `config:"flush"`
-	GcFrequency  time.Duration `config:"gc_frequency"`
+	FlushTimeout     time.Duration `config:"flush"`
+	GcFrequency      time.Duration `config:"gc_frequency"`
+	OperationLogPath string        `config:"operation_log_path"`
 }
 
 //默认配置
