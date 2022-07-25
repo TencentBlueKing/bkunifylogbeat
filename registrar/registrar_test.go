@@ -134,10 +134,10 @@ func TestRegistrarIO(t *testing.T) {
 
 	//Step 3: 写入事件
 	source := "/data/logs/test.log"
-
 	for i := 0; i < 100; i++ {
 		states := make([]file.State, 0)
-		for j := 0; j < 1000000; j++ {
+		for j := 0; j < 100000; j++ {
+			//Step 3: 写入事件
 			data := tests.MockLogEvent(source, "test")
 			states = append(states, data.GetState())
 		}
