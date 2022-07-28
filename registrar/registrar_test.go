@@ -138,7 +138,7 @@ func TestRegistrarIO(t *testing.T) {
 		states := make([]file.State, 0)
 		for j := 0; j < 100000; j++ {
 			//Step 3: 写入事件
-			data := tests.MockLogEvent(source, "test")
+			data := tests.MockLogEventState(source, "test", uint64(i), uint64(j))
 			states = append(states, data.GetState())
 		}
 		registrar.Channel <- states

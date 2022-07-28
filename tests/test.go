@@ -26,6 +26,7 @@ import (
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
 	"github.com/elastic/beats/filebeat/input/file"
 	"github.com/elastic/beats/filebeat/util"
+	file2 "github.com/elastic/beats/libbeat/common/file"
 )
 
 //MockLogEvent: 生成日志采集事件
@@ -43,6 +44,27 @@ func MockLogEvent(source string, content string) *util.Data {
 	data.SetState(file.State{
 		Source: source,
 		Offset: 1,
+	})
+	return data
+}
+
+//MockLogEvent: 生成日志采集事件
+func MockLogEventState(source string, content string, iNode uint64, device uint64) *util.Data {
+	data := &util.Data{
+		Event: beat.Event{
+			Fields: beat.MapStr{
+				"data": content,
+			},
+		},
+	}
+	if content == "" {
+		data.Event.Fields = nil
+	}
+	stateOS := file2.StateOS{Inode: iNode, Device: device}
+	data.SetState(file.State{
+		Source:      source,
+		Offset:      1,
+		FileStateOS: stateOS,
 	})
 	return data
 }
