@@ -155,8 +155,8 @@ func TestRegistrarIO(t *testing.T) {
 	}
 
 	registrar, err := New(cfg.Registry{
-		FlushTimeout:     20 * time.Minute,
-		GcFrequency:      20 * time.Minute,
+		FlushTimeout:     1 * time.Minute,
+		GcFrequency:      1 * time.Minute,
 		OperationLogPath: testOperationLogPath,
 	})
 	if err != nil {
