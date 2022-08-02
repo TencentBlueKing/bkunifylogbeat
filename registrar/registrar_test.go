@@ -115,7 +115,6 @@ func TestRegistrar(t *testing.T) {
 
 func TestRegistrarIO(t *testing.T) {
 	testRegPath, err := filepath.Abs("../tests/registrar.bkpipe.db")
-
 	if err != nil {
 		panic(err)
 	}
@@ -158,6 +157,7 @@ func TestRegistrarIO(t *testing.T) {
 		FlushTimeout:     1 * time.Minute,
 		GcFrequency:      1 * time.Minute,
 		OperationLogPath: testOperationLogPath,
+
 	})
 	if err != nil {
 		panic(err)
@@ -167,12 +167,14 @@ func TestRegistrarIO(t *testing.T) {
 		panic(err)
 	}
 	registrar.Start()
+
 	source := "/data/logs/test.log"
 	for i := 0; i < 5; i++ {
 		states := make([]file.State, 0)
 		for j := 0; j < 10; j++ {
 			//Step 3: 写入事件
 			data := tests.MockLogEvent(source, "test")
+
 			states = append(states, data.GetState())
 		}
 		registrar.Channel <- states
@@ -180,9 +182,11 @@ func TestRegistrarIO(t *testing.T) {
 	time.Sleep(10 * time.Second)
 	Operations := registrar.loadOperation()
 	assert.Equal(t, len(Operations), 50)
+
 	//Step 5: 关闭并删除文件
 	registrar.Stop()
 	bkStorage.Close()
 	os.Remove(testRegPath)
 	os.Remove(testOperationLogPath)
+
 }
