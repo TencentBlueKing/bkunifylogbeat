@@ -41,18 +41,16 @@ import (
 )
 
 const (
-	registrarKey     = "registrar"
-	timeKey          = "localtime"
-	stateNanosecond  = 1
-	stateNotManage   = -2
-	operationLogPath = "/var/lib/gse/operation.log"
+	registrarKey    = "registrar"
+	timeKey         = "localtime"
+	stateNanosecond = 1
+	stateNotManage  = -2
 )
 
 var (
 	registrarFlushed      = bkmonitoring.NewInt("registrar_flushed")
 	registrarMarshalError = bkmonitoring.NewInt("registrar_marshal_error")
 	registrarFiles        = bkmonitoring.NewInt("registrar_files", monitoring.Gauge)
-	absOperationLogPath   string
 	operationLogFileObj   *os.File
 	operationLogWriter    *bufio.Writer
 )
@@ -64,14 +62,16 @@ type operation struct {
 
 // Registrar: 采集进度管理
 type Registrar struct {
-	Channel chan []file.State
-	done    chan struct{}
-	wg      sync.WaitGroup
+	Channel        chan []file.State
+	done           chan struct{}
+	wg             sync.WaitGroup
+	operationLogWG sync.WaitGroup
 
-	states       *file.States // Map with all file paths inside and the corresponding state
-	gcRequired   bool         // gcRequired is set if registry state needs to be gc'ed before the next write
-	flushTimeout time.Duration
-	gcFrequency  time.Duration
+	states           *file.States // Map with all file paths inside and the corresponding state
+	gcRequired       bool         // gcRequired is set if registry state needs to be gc'ed before the next write
+	flushTimeout     time.Duration
+	gcFrequency      time.Duration
+	operationLogPath string
 }
 
 // New creates a new Registrar instance, updating the registry file on
@@ -81,10 +81,11 @@ func New(config cfg.Registry) (*Registrar, error) {
 		done: make(chan struct{}),
 		wg:   sync.WaitGroup{},
 
-		states:       file.NewStates(),
-		Channel:      make(chan []file.State, 1),
-		flushTimeout: config.FlushTimeout,
-		gcFrequency:  config.GcFrequency,
+		states:           file.NewStates(),
+		Channel:          make(chan []file.State, 1),
+		flushTimeout:     config.FlushTimeout,
+		gcFrequency:      config.GcFrequency,
+		operationLogPath: config.OperationLogPath,
 	}
 	return r, r.Init()
 }
@@ -93,8 +94,8 @@ func New(config cfg.Registry) (*Registrar, error) {
 func (r *Registrar) Init() error {
 	var states []file.State
 	var err error
-	absOperationLogPath = operationLogPath
-	operationLogFileObj, err = os.OpenFile(absOperationLogPath, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
+
+	operationLogFileObj, err = os.OpenFile(r.operationLogPath, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
 	if err != nil {
 		return fmt.Errorf("open opeartion Log file returned error: %v. Continuing", err)
 	}
@@ -225,7 +226,7 @@ func (r *Registrar) onEvents(states []file.State) {
 // flushRegistry writes the registry to disk.
 func (r *Registrar) flushRegistry() {
 	registrarFlushed.Add(1)
-
+	r.operationLogWG.Add(1)
 	// First clean up states
 	r.gcStates()
 	states := r.GetStates()
@@ -244,6 +245,7 @@ func (r *Registrar) flushRegistry() {
 
 	operationLogFileObj.Truncate(0)
 	operationLogFileObj.Seek(0, 0)
+	r.operationLogWG.Done()
 }
 
 // migrate file state
@@ -303,7 +305,7 @@ func (r *Registrar) gcStates() {
 }
 
 func (r *Registrar) logOperation(s file.State, ts time.Time) {
-
+	r.operationLogWG.Wait()
 	operationLog, err := json.Marshal(operation{
 		Time:  ts,
 		State: s,
@@ -319,6 +321,7 @@ func (r *Registrar) logOperation(s file.State, ts time.Time) {
 }
 
 func (r Registrar) loadOperation() []operation {
+	operationLogFileObj.Seek(0, 0)
 	scanner := bufio.NewScanner(operationLogFileObj)
 	operations := make([]operation, 0)
 	for scanner.Scan() {
@@ -354,7 +357,7 @@ func (r *Registrar) migrateOperation(operations []operation) {
 }
 
 func (r *Registrar) operationLogFileSizeHandler() {
-	fileStat, err := os.Stat(absOperationLogPath)
+	fileStat, err := os.Stat(r.operationLogPath)
 	if err != nil {
 		logp.L.Errorf("Get operation Log Stat returned error: %v. Continuing...", err)
 	}
