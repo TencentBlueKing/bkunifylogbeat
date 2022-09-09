@@ -31,6 +31,7 @@ import (
 	"github.com/elastic/beats/libbeat/processors"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // ConditionConfig : 用于条件表达式，目前支持=、!=
@@ -132,6 +133,7 @@ func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
 				if condition.Op != "=" && condition.Op != "!=" {
 					return nil, fmt.Errorf("op must = or !=")
 				}
+				condition.Key = strings.TrimSpace(condition.Key)
 			}
 			config.HasFilter = true
 		}
