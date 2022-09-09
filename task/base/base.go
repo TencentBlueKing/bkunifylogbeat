@@ -27,6 +27,7 @@ import (
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/bkmonitoring"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
 	"github.com/elastic/beats/libbeat/monitoring"
+	"sync"
 )
 
 var (
@@ -51,7 +52,8 @@ type Node struct {
 	Outs map[string]chan interface{}
 	In   chan interface{}
 
-	End chan struct{}
+	closeOnce sync.Once
+	End       chan struct{}
 
 	TaskNodeList map[string]map[string]*TaskNode
 }
@@ -150,7 +152,9 @@ func (n *Node) RemoveOutput(node *Node) {
 			n.ParentNode.RemoveOutput(n)
 		}
 		logp.L.Infof("node(%s) is remove", n.ID)
-		close(n.End)
+		n.closeOnce.Do(func() {
+			close(n.End)
+		})
 	}
 }
 
