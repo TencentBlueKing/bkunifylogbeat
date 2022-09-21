@@ -185,7 +185,7 @@ func (m *Manager) startTask(config *cfg.TaskConfig, lastStates []file.State) err
 	var err error
 	taskInst, err := task.NewTask(config, m.beatDone, lastStates)
 	if err != nil {
-		logp.L.Errorf("start task err, taskid=>%s err=>%v", taskInst.ID, err)
+		logp.L.Errorf("start task err, taskid=>%s err=>%v", config.ID, err)
 		taskError.Add(1)
 		return err
 	}
