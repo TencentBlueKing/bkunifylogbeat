@@ -23,6 +23,7 @@
 package registrar
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -50,18 +51,27 @@ var (
 	registrarFlushed      = bkmonitoring.NewInt("registrar_flushed")
 	registrarMarshalError = bkmonitoring.NewInt("registrar_marshal_error")
 	registrarFiles        = bkmonitoring.NewInt("registrar_files", monitoring.Gauge)
+	operationLogFileObj   *os.File
+	operationLogWriter    *bufio.Writer
 )
+
+type operation struct {
+	State file.State
+	Time  time.Time
+}
 
 // Registrar: 采集进度管理
 type Registrar struct {
-	Channel chan []file.State
-	done    chan struct{}
-	wg      sync.WaitGroup
+	Channel        chan []file.State
+	done           chan struct{}
+	wg             sync.WaitGroup
+	operationLogWG sync.WaitGroup
 
-	states       *file.States // Map with all file paths inside and the corresponding state
-	gcRequired   bool         // gcRequired is set if registry state needs to be gc'ed before the next write
-	flushTimeout time.Duration
-	gcFrequency  time.Duration
+	states           *file.States // Map with all file paths inside and the corresponding state
+	gcRequired       bool         // gcRequired is set if registry state needs to be gc'ed before the next write
+	flushTimeout     time.Duration
+	gcFrequency      time.Duration
+	operationLogPath string
 }
 
 // New creates a new Registrar instance, updating the registry file on
@@ -71,10 +81,11 @@ func New(config cfg.Registry) (*Registrar, error) {
 		done: make(chan struct{}),
 		wg:   sync.WaitGroup{},
 
-		states:       file.NewStates(),
-		Channel:      make(chan []file.State, 1),
-		flushTimeout: config.FlushTimeout,
-		gcFrequency:  config.GcFrequency,
+		states:           file.NewStates(),
+		Channel:          make(chan []file.State, 1),
+		flushTimeout:     config.FlushTimeout,
+		gcFrequency:      config.GcFrequency,
+		operationLogPath: config.OperationLogPath,
 	}
 	return r, r.Init()
 }
@@ -82,6 +93,13 @@ func New(config cfg.Registry) (*Registrar, error) {
 // Init: 采集器启动时调用，同时对原采集器采集进度迁移
 func (r *Registrar) Init() error {
 	var states []file.State
+	var err error
+
+	operationLogFileObj, err = os.OpenFile(r.operationLogPath, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
+	if err != nil {
+		return fmt.Errorf("open opeartion Log file returned error: %v. Continuing", err)
+	}
+	operationLogWriter = bufio.NewWriter(operationLogFileObj)
 
 	// get time
 	str, err := bkStorage.Get(timeKey)
@@ -112,11 +130,14 @@ func (r *Registrar) Init() error {
 		logp.L.Errorf("json unmarshal error, %s", str)
 		return fmt.Errorf("error decoding states: %s", err)
 	}
+
 	states = r.migrate(states)
 	logp.L.Infof("load states: time=>%s, count=>%d, flush=>%s, gcFrequency=>%s",
 		t, len(states), r.flushTimeout, r.gcFrequency)
 
 	r.states.SetStates(ResetStates(states))
+	operations := r.loadOperation()
+	r.migrateOperation(operations)
 	return nil
 }
 
@@ -157,10 +178,13 @@ func (r *Registrar) run() {
 	// Writes registry on shutdown
 	flushTicker := time.NewTicker(r.flushTimeout)
 	gcTicker := time.NewTicker(r.gcFrequency)
+	operationLogSizeTimer := time.NewTicker(1 * time.Second)
 
 	defer func() {
 		flushTicker.Stop()
 		gcTicker.Stop()
+		operationLogSizeTimer.Stop()
+		operationLogFileObj.Close()
 		r.flushRegistry()
 		r.wg.Done()
 	}()
@@ -170,6 +194,8 @@ func (r *Registrar) run() {
 		case <-r.done:
 			logp.L.Info("Ending Registrar")
 			return
+		case <-operationLogSizeTimer.C:
+			r.operationLogFileSizeHandler()
 		case <-flushTicker.C:
 			r.flushRegistry()
 		case <-gcTicker.C:
@@ -187,8 +213,11 @@ func (r *Registrar) onEvents(states []file.State) {
 	ts := time.Now()
 	for _, s := range states {
 		if s.Type == wineventlog.WinLogFileStateType {
-			r.states.UpdateWithTs(s, s.Timestamp)
+			stateTS := s.Timestamp
+			r.logOperation(s, stateTS)
+			r.states.UpdateWithTs(s, stateTS)
 		} else {
+			r.logOperation(s, ts)
 			r.states.UpdateWithTs(s, ts)
 		}
 	}
@@ -197,7 +226,7 @@ func (r *Registrar) onEvents(states []file.State) {
 // flushRegistry writes the registry to disk.
 func (r *Registrar) flushRegistry() {
 	registrarFlushed.Add(1)
-
+	r.operationLogWG.Add(1)
 	// First clean up states
 	r.gcStates()
 	states := r.GetStates()
@@ -213,6 +242,10 @@ func (r *Registrar) flushRegistry() {
 
 	bkStorage.Set(registrarKey, string(bytes), 0)
 	bkStorage.Set(timeKey, time.Now().Format(time.UnixDate), 0)
+
+	operationLogFileObj.Truncate(0)
+	operationLogFileObj.Seek(0, 0)
+	r.operationLogWG.Done()
 }
 
 // migrate file state
@@ -256,6 +289,7 @@ func (r *Registrar) gcStates() {
 	for _, state := range states {
 		if state.TTL == stateNotManage {
 			state.TTL = stateNanosecond
+			r.logOperation(state, time.Now())
 			r.states.Update(state)
 		}
 	}
@@ -268,4 +302,66 @@ func (r *Registrar) gcStates() {
 		beforeCount, beforeCount-cleanedStates, pendingClean)
 
 	r.gcRequired = false
+}
+
+func (r *Registrar) logOperation(s file.State, ts time.Time) {
+	r.operationLogWG.Wait()
+	operationLog, err := json.Marshal(operation{
+		Time:  ts,
+		State: s,
+	})
+
+	if err != nil {
+		logp.L.Errorf("Marshal operationLog returned error: %v. Continuing...", err)
+	}
+
+	operationLogWriter.WriteString(string(operationLog))
+	operationLogWriter.WriteString("\n")
+	operationLogWriter.Flush()
+}
+
+func (r Registrar) loadOperation() []operation {
+	operationLogFileObj.Seek(0, 0)
+	scanner := bufio.NewScanner(operationLogFileObj)
+	operations := make([]operation, 0)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+		var operationItem = operation{}
+		err := json.Unmarshal([]byte(line), &operationItem)
+		logp.L.Errorf("Unmarshal operationLog returned error: %v. Continuing...", err)
+		operations = append(operations, operationItem)
+
+	}
+	return operations
+}
+
+func (r *Registrar) migrateOperation(operations []operation) {
+	for _, operation := range operations {
+		s := operation.State
+		if s.IsEmpty() {
+			continue
+		}
+		if s.Type == wineventlog.WinLogFileStateType {
+			r.states.UpdateWithTs(s, s.Timestamp)
+		} else {
+			r.states.UpdateWithTs(s, operation.Time)
+		}
+	}
+	r.gcRequired = true
+	r.gcStates()
+	operationLogFileObj.Truncate(0)
+	operationLogFileObj.Seek(0, 0)
+}
+
+func (r *Registrar) operationLogFileSizeHandler() {
+	fileStat, err := os.Stat(r.operationLogPath)
+	if err != nil {
+		logp.L.Errorf("Get operation Log Stat returned error: %v. Continuing...", err)
+	}
+	if fileStat.Size() == 10*1024*1024 {
+		r.flushRegistry()
+	}
 }
