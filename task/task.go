@@ -75,7 +75,7 @@ func NewTask(config *cfg.TaskConfig, beatDone chan struct{}, lastStates []file.S
 	}
 
 	var err error
-	task.input, err = input.GetInput(task.Config, task.TaskNode, task.End, lastStates)
+	task.input, err = input.GetInput(task.Config, task.TaskNode, beatDone, lastStates)
 	if err != nil {
 		return nil, fmt.Errorf("[%s] error while get input: %s", task.ID, err)
 	}
@@ -114,6 +114,11 @@ func (task *Task) Stop() error {
 	logp.L.Infof("task(%s) is Stop", task.ID)
 	task.ParentNode.RemoveOutput(task.Node)
 	task.ParentNode.RemoveTaskNode(task.Node, task.TaskNode)
+
+	logp.L.Infof("task(%s) is remove", task.ID)
+	task.CloseOnce.Do(func() {
+		close(task.End)
+	})
 	return nil
 }
 

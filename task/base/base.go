@@ -52,7 +52,7 @@ type Node struct {
 	Outs map[string]chan interface{}
 	In   chan interface{}
 
-	closeOnce sync.Once
+	CloseOnce sync.Once
 	End       chan struct{}
 
 	TaskNodeList map[string]map[string]*TaskNode
@@ -152,7 +152,7 @@ func (n *Node) RemoveOutput(node *Node) {
 			n.ParentNode.RemoveOutput(n)
 		}
 		logp.L.Infof("node(%s) is remove", n.ID)
-		n.closeOnce.Do(func() {
+		n.CloseOnce.Do(func() {
 			close(n.End)
 		})
 	}
