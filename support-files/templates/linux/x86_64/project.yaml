@@ -1,7 +1,7 @@
 name: bkunifylogbeat
-version: 7.2.1
+version: 7.3.1
 description: 高性能日志采集
-scenario: 数据平台，蓝鲸监控，日志检索等和日志相关的数据. 首次使用插件管理进行操作前，先到日志检索/数据平台等进行设置插件的功能项
+scenario: 计算平台，蓝鲸监控，日志检索等和日志相关的数据. 首次使用插件管理进行操作前，先到日志检索/数据平台等进行设置插件的功能项
 category: official
 config_file: bkunifylogbeat.conf
 config_format: yaml
