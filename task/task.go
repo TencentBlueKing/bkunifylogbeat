@@ -47,16 +47,7 @@ type Task struct {
 func NewTask(config *cfg.TaskConfig, beatDone chan struct{}, lastStates []file.State) (*Task, error) {
 	task := &Task{
 		TaskNode: &base.TaskNode{
-			Node: &base.Node{
-				ID: config.ID,
-
-				In:   make(chan interface{}),
-				Outs: make(map[string]chan interface{}),
-
-				End: make(chan struct{}),
-
-				TaskNodeList: map[string]map[string]*base.TaskNode{},
-			},
+			Node: base.NewEmptyNode(config.ID),
 
 			// Crawler metrics
 			CrawlerReceived:  bkmonitoring.NewIntWithDataID(config.DataID, "crawler_received"),
