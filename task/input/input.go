@@ -196,7 +196,7 @@ func (in *Input) Run() {
 //   2. 当End的channel被主动关闭后
 func (in *Input) stop() {
 	in.stopOnce.Do(func() {
-		in.runner.Stop()
+		go in.runner.Stop() // 防止卡主reload的流程，这里改为异步，不等待input结束
 	})
 }
 
