@@ -138,6 +138,7 @@ func (in *Input) Start() {
 }
 
 func (in *Input) Run() {
+	defer close(in.GameOver)
 	defer func() {
 		RemoveInput(in.ID)
 		in.stop()

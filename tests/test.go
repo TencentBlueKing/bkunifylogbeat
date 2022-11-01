@@ -61,6 +61,8 @@ func MockTaskNode(config *config.TaskConfig) *base.TaskNode {
 
 			End: make(chan struct{}),
 
+			GameOver: make(chan struct{}),
+
 			TaskNodeList: map[string]map[string]*base.TaskNode{},
 		},
 

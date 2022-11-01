@@ -94,6 +94,7 @@ func (task *Task) Start() {
 }
 
 func (task *Task) Run() {
+	defer close(task.GameOver)
 	for {
 		select {
 		case <-task.beatDone:
@@ -118,6 +119,7 @@ func (task *Task) Stop() error {
 	logp.L.Infof("task(%s) is remove", task.ID)
 	task.CloseOnce.Do(func() {
 		close(task.End)
+		task.WaitUntilGameOver() // 这里需要等待，确保全局共享变量已经完整清除相关节点
 	})
 	return nil
 }

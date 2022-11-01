@@ -132,6 +132,7 @@ func (f *Filters) MergeFilterConfig(taskCfg *config.TaskConfig) {
 }
 
 func (f *Filters) Run() {
+	defer close(f.GameOver)
 	defer RemoveFilter(f.ID)
 	for {
 		select {

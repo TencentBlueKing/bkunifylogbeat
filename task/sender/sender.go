@@ -153,6 +153,7 @@ func (send *Sender) MergeSenderConfig(taskCfg *config.TaskConfig) error {
 }
 
 func (send *Sender) Run() {
+	defer close(send.GameOver)
 	defer RemoveSender(send.ID)
 
 	senderTicker := time.NewTicker(1 * time.Second)

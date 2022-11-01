@@ -55,6 +55,8 @@ type Node struct {
 	CloseOnce sync.Once
 	End       chan struct{}
 
+	GameOver chan struct{} // 用该信号代表Run函数已经完整退出
+
 	TaskNodeList map[string]map[string]*TaskNode
 }
 
@@ -80,6 +82,8 @@ func NewEmptyNode(id string) *Node {
 		Outs: make(map[string]chan interface{}),
 
 		End: make(chan struct{}),
+
+		GameOver: make(chan struct{}),
 
 		TaskNodeList: map[string]map[string]*TaskNode{},
 	}
@@ -154,11 +158,13 @@ func (n *Node) RemoveOutput(node *Node) {
 		logp.L.Infof("node(%s) is remove", n.ID)
 		n.CloseOnce.Do(func() {
 			close(n.End)
+			n.WaitUntilGameOver()
 		})
 	}
 }
 
 func (n *Node) Run() {
+	defer close(n.GameOver)
 	for {
 		select {
 		case <-n.End:
@@ -172,5 +178,12 @@ func (n *Node) Run() {
 				out <- event
 			}
 		}
+	}
+}
+
+func (n *Node) WaitUntilGameOver() {
+	select {
+	case <-n.GameOver:
+		return
 	}
 }
