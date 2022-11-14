@@ -100,7 +100,7 @@ func (bt *LogBeat) Run() error {
 		logp.L.Error("failed to start manager ")
 	}
 
-	reloadTicker := time.NewTicker(3 * time.Second)
+	reloadTicker := time.NewTicker(10 * time.Second)
 	defer reloadTicker.Stop()
 	for {
 		select {

@@ -138,6 +138,7 @@ func (p *Processors) MergeProcessorsConfig(taskCfg *config.TaskConfig) error {
 
 // Run : 循环处理数据
 func (p *Processors) Run() {
+	defer close(p.GameOver)
 	defer RemoveProcessors(p.ID)
 	for {
 		select {

@@ -47,16 +47,7 @@ type Task struct {
 func NewTask(config *cfg.TaskConfig, beatDone chan struct{}, lastStates []file.State) (*Task, error) {
 	task := &Task{
 		TaskNode: &base.TaskNode{
-			Node: &base.Node{
-				ID: config.ID,
-
-				In:   make(chan interface{}),
-				Outs: make(map[string]chan interface{}),
-
-				End: make(chan struct{}),
-
-				TaskNodeList: map[string]map[string]*base.TaskNode{},
-			},
+			Node: base.NewEmptyNode(config.ID),
 
 			// Crawler metrics
 			CrawlerReceived:  bkmonitoring.NewIntWithDataID(config.DataID, "crawler_received"),
@@ -94,6 +85,7 @@ func (task *Task) Start() {
 }
 
 func (task *Task) Run() {
+	defer close(task.GameOver)
 	for {
 		select {
 		case <-task.beatDone:
@@ -118,6 +110,7 @@ func (task *Task) Stop() error {
 	logp.L.Infof("task(%s) is remove", task.ID)
 	task.CloseOnce.Do(func() {
 		close(task.End)
+		task.WaitUntilGameOver() // 这里需要等待，确保全局共享变量已经完整清除相关节点
 	})
 	return nil
 }

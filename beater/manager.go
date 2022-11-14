@@ -25,6 +25,7 @@ package beater
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/registrar"
@@ -150,6 +151,8 @@ func (m *Manager) Reload(config cfg.Config) {
 			taskStop.Add(1)
 		}
 	}
+
+	time.Sleep(3 * time.Second) // 增加等待时间，确保任务删除后，相关资源已经完整释放
 
 	//step 4：新增的任务需要启动采集、存量任务需要重新加载配置
 	if len(addTasks) > 0 {
