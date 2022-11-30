@@ -46,7 +46,7 @@ func init() {
 		"enabled":         true,
 		"scan_frequency":  10 * time.Second,
 		"harvester_limit": 1000,
-		"exclude_files":   []string{".gz$", ".bz2$", ".tgz$", ".tbz$", ".zip$", ".7z$", ".bak$", ".backup", ".swp$"},
+		"exclude_files":   []string{".gz$", ".bz2$", ".tgz$", ".tbz$", ".zip$", ".7z$", ".bak$", ".backup$", ".swp$"},
 
 		// close
 		"close_inactive": 2 * time.Minute,
