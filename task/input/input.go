@@ -32,6 +32,7 @@ import (
 	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/bkmonitoring"
 	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
+	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
 	"github.com/elastic/beats/filebeat/channel"
 	"github.com/elastic/beats/filebeat/input"
 	"github.com/elastic/beats/filebeat/input/file"
@@ -179,6 +180,10 @@ func (in *Input) Run() {
 				}
 			} else {
 				// 采集进度类事件
+				beat.SendEvent(beat.Event{
+					Fields:  nil,
+					Private: data.GetState(),
+				})
 				base.CrawlerState.Add(1)
 				for _, taskNodeList := range in.TaskNodeList {
 					for _, tNode := range taskNodeList {
