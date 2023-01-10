@@ -1,9 +1,9 @@
 module github.com/TencentBlueKing/bkunifylogbeat
 
-go 1.17
+go 1.19
 
 require (
-	github.com/TencentBlueKing/collector-go-sdk/v2 v2.8.7
+	github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse v0.0.0-00010101000000-000000000000
 	github.com/dustin/go-humanize v1.0.0
 	github.com/elastic/beats v7.1.1+incompatible
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
@@ -16,6 +16,7 @@ require (
 require (
 	github.com/Shopify/sarama v1.27.1 // indirect
 	github.com/StackExchange/wmi v1.2.1 // indirect
+	github.com/TencentBlueKing/bkmonitor-datalink/pkg/utils v0.0.0-00010101000000-000000000000 // indirect
 	github.com/andrewkroh/sys v0.0.0-20151128191922-287798fe3e43 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/boltdb/bolt v1.3.1 // indirect
@@ -39,13 +40,14 @@ require (
 	github.com/garyburd/redigo v1.6.2 // indirect
 	github.com/go-ole/go-ole v1.2.5 // indirect
 	github.com/godbus/dbus/v5 v5.0.3 // indirect
-	github.com/gofrs/uuid v4.2.0+incompatible // indirect
+	github.com/gofrs/uuid v4.3.0+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/btree v1.0.1 // indirect
 	github.com/grafana/regexp v0.0.0-20220304095617-2e8d9baf4ac2 // indirect
 	github.com/hashicorp/go-uuid v1.0.2 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jcmturner/gofork v1.0.0 // indirect
 	github.com/joeshaw/multierror v0.0.0-20140124173710-69b34d4ec901 // indirect
 	github.com/klauspost/compress v1.13.6 // indirect
@@ -80,6 +82,7 @@ require (
 	gopkg.in/jcmturner/dnsutils.v1 v1.0.1 // indirect
 	gopkg.in/jcmturner/gokrb5.v7 v7.5.0 // indirect
 	gopkg.in/jcmturner/rpc.v1 v1.1.0 // indirect
+	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	howett.net/plist v0.0.0-20181124034731-591f970eefbb // indirect
@@ -87,6 +90,7 @@ require (
 
 replace (
 	github.com/Sirupsen/logrus v1.6.0 => github.com/sirupsen/logrus v1.6.0
-	github.com/TencentBlueKing/collector-go-sdk/v2 v2.8.7 => ../collector-go-sdk/v2
+	github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse => ../bkmonitor-datalink/pkg/libgse
+	github.com/TencentBlueKing/bkmonitor-datalink/pkg/utils => ../bkmonitor-datalink/pkg/utils
 	github.com/elastic/beats v7.1.1+incompatible => github.com/TencentBlueKing/beats v7.1.16-bk+incompatible
 )

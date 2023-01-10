@@ -30,8 +30,8 @@ import (
 
 	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/tests"
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
-	bkStorage "github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/storage"
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
+	bkStorage "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/storage"
 	"github.com/elastic/beats/filebeat/input/file"
 	libbeatlogp "github.com/elastic/beats/libbeat/logp"
 	"github.com/stretchr/testify/assert"

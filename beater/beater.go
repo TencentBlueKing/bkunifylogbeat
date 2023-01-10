@@ -34,8 +34,8 @@ import (
 	// 加载 Filebeat Input插件及配置优化模块
 	_ "github.com/TencentBlueKing/bkunifylogbeat/include"
 	"github.com/TencentBlueKing/bkunifylogbeat/registrar"
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	"github.com/pkg/errors"
 )
 

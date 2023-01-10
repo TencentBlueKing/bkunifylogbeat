@@ -23,8 +23,8 @@
 package filter
 
 import (
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	libbeatlogp "github.com/elastic/beats/libbeat/logp"
 	"testing"
 	"time"
