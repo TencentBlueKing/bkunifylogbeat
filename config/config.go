@@ -47,6 +47,11 @@ type Config struct {
 	SecConfigs []SecConfigItem `config:"multi_config"`
 
 	Registry Registry `config:"registry"`
+
+	HostIDPath         string `config:"host_id_path"`
+	CmdbLevelMaxLength int    `config:"cmdb_level_max_length"`
+	IgnoreCmdbLevel    bool   `config:"ignore_cmdb_level"`
+	MustHostIDExist    bool   `config:"must_host_id_exist"`
 }
 
 // 从配置目录
