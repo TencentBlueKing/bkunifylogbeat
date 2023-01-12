@@ -35,7 +35,6 @@ import (
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/output/gse"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/utils/host"
-	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/utils/logger"
 	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
 	// 加载 Filebeat Input插件及配置优化模块
 	_ "github.com/TencentBlueKing/bkunifylogbeat/include"
@@ -171,7 +170,7 @@ func (bt *LogBeat) initHostIDWatcher() error {
 	if bt.hostIDWatcher != nil {
 		err = bt.hostIDWatcher.Reload(context.Background(), bt.config.HostIDPath, bt.config.CmdbLevelMaxLength, bt.config.MustHostIDExist)
 		if err != nil {
-			logger.Warnf("reload watch host id failed,error:%s", err.Error())
+			logp.L.Warnf("reload watch host id failed,error:%s", err.Error())
 			// 不影响其他位置的reload
 			return nil
 		}
@@ -188,10 +187,11 @@ func (bt *LogBeat) initHostIDWatcher() error {
 	bt.hostIDWatcher = host.NewWatcher(context.Background(), hostConfig)
 	err = bt.hostIDWatcher.Start()
 	if err != nil {
-		logger.Warnf("start watch host id failed,filepath:%s,cmdb max length:%d,error:%s", bt.config.HostIDPath, bt.config.CmdbLevelMaxLength, err)
+		logp.L.Warnf("start watch host id failed,filepath:%s,cmdb max length:%d,error:%s", bt.config.HostIDPath, bt.config.CmdbLevelMaxLength, err)
 		return err
 	}
 	gse.RegisterHostWatcher(bt.hostIDWatcher)
+	logp.L.Infof("register hostid to gse success.")
 
 	return nil
 }
