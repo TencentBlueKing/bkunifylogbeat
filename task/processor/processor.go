@@ -26,11 +26,11 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
+	bkmonitoring "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/monitoring"
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/sender"
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/bkmonitoring"
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
 	"github.com/elastic/beats/filebeat/util"
 	"github.com/elastic/beats/libbeat/beat"
 	process "github.com/elastic/beats/libbeat/processors"

@@ -27,7 +27,7 @@ import (
 	"time"
 
 	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/dustin/go-humanize"
 )
 

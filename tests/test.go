@@ -23,10 +23,10 @@
 package tests
 
 import (
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
+	bkmonitoring "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/monitoring"
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/bkmonitoring"
 	"github.com/elastic/beats/filebeat/input/file"
 	"github.com/elastic/beats/filebeat/util"
 )

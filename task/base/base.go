@@ -24,8 +24,8 @@ package base
 
 import (
 	"fmt"
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/bkmonitoring"
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
+	bkmonitoring "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/monitoring"
 	"github.com/elastic/beats/libbeat/monitoring"
 	"sync"
 )
