@@ -1,7 +1,9 @@
 name: bkunifylogbeat
-version: 7.3.1
-description: 高性能日志采集
+version: 7.5.1
+description: 蓝鲸日志采集器
+description_en: BlueKing Log Collector
 scenario: 计算平台，蓝鲸监控，日志检索等和日志相关的数据. 首次使用插件管理进行操作前，先到日志检索/数据平台等进行设置插件的功能项
+scenario_en: BKData, BKMonitor, BKLog and other data collection related to logs. For the first use, you need to go to the corresponding platform to set up related function items
 category: official
 config_file: bkunifylogbeat.conf
 config_format: yaml
