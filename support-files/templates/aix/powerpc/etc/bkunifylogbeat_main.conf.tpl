@@ -36,6 +36,7 @@ processors:
 
 bkunifylogbeat.eventdataid: -1
 bkunifylogbeat.registry.flush: "10s"
+bkunifylogbeat.host_id_path: {{ plugin_path.host_id }}
 bkunifylogbeat.multi_config:
   - path: {{ plugin_path.subconfig_path }}
     file_pattern: "*.conf"
