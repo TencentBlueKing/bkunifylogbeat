@@ -74,9 +74,10 @@ type SenderConfig struct {
 	ExtMeta      interface{} `config:"ext_meta"`
 
 	// Output
-	RemovePathPrefix string `config:"remove_path_prefix"` // 去除路径前缀
-	IsContainerStd   bool   `config:"is_container_std"`   // 是否为容器标准输出日志
-	OutputFormat     string `config:"output_format"`      // 输出格式，为了兼容老版采集器的输出格式
+	RemovePathPrefix  string `config:"remove_path_prefix"`   // 去除路径前缀
+	IsContainerStd    bool   `config:"is_container_std"`     // 是否为容器标准输出日志(docker)
+	IsCRIContainerStd bool   `config:"is_cri_container_std"` // 是否为容器标准输出日志(CRI)
+	OutputFormat      string `config:"output_format"`        // 输出格式，为了兼容老版采集器的输出格式
 }
 
 // TaskConfig 采集任务配置
@@ -264,7 +265,7 @@ func initTaskConfig(inputType string, rawConfig *beat.Config) (*beat.Config, err
 	return f(rawConfig)
 }
 
-//CreateTaskConfig: 根据字典生成任务配置
+// CreateTaskConfig: 根据字典生成任务配置
 func CreateTaskConfig(vars map[string]interface{}) (*TaskConfig, error) {
 	rawConfig, err := common.NewConfigFrom(vars)
 	if err != nil {
