@@ -23,6 +23,12 @@ config_templates:
     file_path: etc/bkunifylogbeat
     format: yaml
     source_path: etc/bkunifylogbeat.conf.tpl
+  - plugin_version: "*"
+    name: bkunifylogbeat.conf
+    version: 1
+    file_path: etc/bkunifylogbeat
+    format: yaml
+    source_path: etc/bkunifylogbeat_redis_slowlog.conf.tpl
 control:
   start: "./start.sh bkunifylogbeat"
   stop: "./stop.sh bkunifylogbeat"
