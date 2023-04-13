@@ -24,7 +24,7 @@ config_templates:
     format: yaml
     source_path: etc/bkunifylogbeat.conf.tpl
   - plugin_version: "*"
-    name: bkunifylogbeat.conf
+    name: bkunifylogbeat_redis_slowlog.conf
     version: 1
     file_path: etc/bkunifylogbeat
     format: yaml
