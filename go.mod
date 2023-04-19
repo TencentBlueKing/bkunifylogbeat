@@ -18,5 +18,5 @@ require (
 replace (
 	github.com/Sirupsen/logrus v1.6.0 => github.com/sirupsen/logrus v1.6.0
 	github.com/TencentBlueKing/collector-go-sdk/v2 v2.2.5 => ../collector-go-sdk/v2
-	github.com/elastic/beats v7.1.1+incompatible => github.com/TencentBlueKing/beats v7.1.19-bk+incompatible
+	github.com/elastic/beats v7.1.1+incompatible => github.com/TencentBlueKing/beats v7.1.20-bk+incompatible
 )
