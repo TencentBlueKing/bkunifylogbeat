@@ -20,21 +20,18 @@
 // WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 // SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package include
+package input
 
 import (
-	// input type
-	_ "github.com/elastic/beats/filebeat/input/log"
-	_ "github.com/elastic/beats/filebeat/input/redis"
-	_ "github.com/elastic/beats/filebeat/input/stdin"
-	_ "github.com/elastic/beats/filebeat/input/syslog"
-	_ "github.com/elastic/beats/filebeat/input/udp"
-
-	_ "github.com/TencentBlueKing/bkunifylogbeat/task/input/wineventlog"
-
-	// input config
-	_ "github.com/TencentBlueKing/bkunifylogbeat/config/input"
-
-	// formatter
-	_ "github.com/TencentBlueKing/bkunifylogbeat/task/formatter"
+	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
+	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
 )
+
+func init() {
+	err := cfg.Register("redis", func(rawConfig *beat.Config) (*beat.Config, error) {
+		return rawConfig, nil
+	})
+	if err != nil {
+		panic(err)
+	}
+}

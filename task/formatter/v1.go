@@ -29,13 +29,14 @@ import (
 	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/elastic/beats/filebeat/util"
+	"strings"
 )
 
 type v1Formatter struct {
 	taskConfig *config.TaskConfig
 }
 
-//NewV1Formatter: 兼容bklogbeat输出格式
+// NewV1Formatter 兼容bklogbeat输出格式
 func NewV1Formatter(config *config.TaskConfig) (*v1Formatter, error) {
 	f := &v1Formatter{
 		taskConfig: config,
@@ -43,7 +44,7 @@ func NewV1Formatter(config *config.TaskConfig) (*v1Formatter, error) {
 	return f, nil
 }
 
-//Format: bklogbeat输出格式兼容
+// Format bklogbeat输出格式兼容
 func (f v1Formatter) Format(events []*util.Data) beat.MapStr {
 	var (
 		datetime, utcTime string
@@ -52,9 +53,13 @@ func (f v1Formatter) Format(events []*util.Data) beat.MapStr {
 	datetime, utcTime, timestamp = utils.GetDateTime()
 
 	lastState := events[len(events)-1].GetState()
+	filename := lastState.Source
+	if len(f.taskConfig.RemovePathPrefix) > 0 {
+		filename = strings.TrimPrefix(filename, f.taskConfig.RemovePathPrefix)
+	}
 	data := beat.MapStr{
 		"dataid":   f.taskConfig.DataID,
-		"filename": lastState.Source,
+		"filename": filename,
 		"datetime": datetime,
 		"utctime":  utcTime,
 		"time":     timestamp,
