@@ -5,6 +5,7 @@ local: {% for item in local %}
       hosts: {%for host in item.hosts %}
         - '{{ host }}'{% endfor %}
       password: '{{ item.get('password', '') }}'
+      password_file: '{{ item.get('password_file', '') }}'
 
       {% if item.ext_meta is defined or item.labels is defined %}ext_meta:
       {%- if item.ext_meta is defined %}
