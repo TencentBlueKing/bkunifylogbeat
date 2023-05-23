@@ -27,11 +27,13 @@ package formatter
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/TencentBlueKing/bkunifylogbeat/config"
-	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
+	"github.com/TencentBlueKing/bkunifylogbeat/config"
+	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 	"github.com/elastic/beats/filebeat/util"
+	"github.com/elastic/beats/libbeat/common"
+	"strconv"
 	"strings"
 )
 
@@ -103,8 +105,50 @@ func (f v2Formatter) parseCRILog(log string, item beat.MapStr) error {
 	return nil
 }
 
+// syslogFormatter 兼容syslog数据格式
+func syslogFormatter(events []*util.Data) []*util.Data {
+	for _, event := range events {
+		fields := event.Event.Fields
+		fields["data"] = fields["message"]
+
+		// 标准syslog RFC3164 格式
+		if _, ok := fields["log"]; ok {
+			address := fields["log"].(beat.MapStr)["source"].(beat.MapStr)["address"].(string)
+			arr := strings.Split(address, ":")
+			if len(arr) > 1 {
+				port, err := strconv.Atoi(arr[1])
+				if err != nil {
+					port = 0
+				}
+				fields["log"].(beat.MapStr)["source"].(beat.MapStr)["address"] = arr[0]
+				fields["log"].(beat.MapStr)["source"].(beat.MapStr)["port"] = port
+			} else {
+				fields["log"].(beat.MapStr)["source"].(beat.MapStr)["port"] = 0
+			}
+		} else {
+			fields["event"] = common.MapStr{}
+			fields["process"] = common.MapStr{}
+			fields["log"] = common.MapStr{}
+			fields["syslog"] = common.MapStr{}
+		}
+
+		err := fields.Delete("message")
+		if err != nil {
+			logp.L.Errorf("key not found: %v", err)
+		}
+		event.Event.Fields = fields
+	}
+	return events
+}
+
 // Format : 最新格式兼容
 func (f v2Formatter) Format(events []*util.Data) beat.MapStr {
+
+	// 兼容syslog采集上报数据
+	if f.taskConfig.Type == "syslog" {
+		events = syslogFormatter(events)
+	}
+
 	var (
 		datetime, utcTime string
 		timestamp         int64
