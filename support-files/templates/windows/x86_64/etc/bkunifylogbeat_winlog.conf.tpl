@@ -6,7 +6,7 @@ local: {% for item in local %}
       {% if item.filters is defined and item.filters %}filters:{% for filter in item.filters %}
        - conditions:{% for condition in filter.conditions %}
          - index: {{ condition.index | int }}
-           key: '{{ condition.key}}'
+           key: '{{ condition.key }}'
            op: '{{ condition.op }}'{% endfor %}
       {% endfor %}{% endif %}
       {% if item.event_logs is defined and item.event_logs %}
@@ -16,7 +16,7 @@ local: {% for item in local %}
           level: '{{ event_log.get("level", "") }}'
           event_id: '{{ event_log.get("event_id", "") }}'
           {% if item.provider_name is defined and item.provider_name %}provider:{% for provider in item.provider_name %}
-           - {{provider}}{% endfor %}
+           - {{ provider }}{% endfor %}
           {% endif %}
       {% endfor %}
       {% endif %}
