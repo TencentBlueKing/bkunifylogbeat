@@ -92,5 +92,5 @@ replace (
 	github.com/Sirupsen/logrus v1.6.0 => github.com/sirupsen/logrus v1.6.0
 	github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse => ../bkmonitor-datalink/pkg/libgse
 	github.com/TencentBlueKing/bkmonitor-datalink/pkg/utils => ../bkmonitor-datalink/pkg/utils
-	github.com/elastic/beats v7.1.1+incompatible => github.com/TencentBlueKing/beats v7.1.22-bk+incompatible
+	github.com/elastic/beats v7.1.1+incompatible => github.com/TencentBlueKing/beats v7.1.21-bk+incompatible
 )
