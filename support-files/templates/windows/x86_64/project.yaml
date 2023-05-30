@@ -37,12 +37,6 @@ config_templates:
     file_path: etc/bkunifylogbeat
     format: yaml
     source_path: etc/bkunifylogbeat_winlog.conf.tpl
-  - plugin_version: "*"
-    name: bkunifylogbeat_syslog.conf
-    version: 1
-    file_path: etc/bkunifylogbeat
-    format: yaml
-    source_path: etc/bkunifylogbeat_syslog.conf.tpl
 control:
   start: "start.bat bkunifylogbeat"
   stop: "stop.bat bkunifylogbeat"
