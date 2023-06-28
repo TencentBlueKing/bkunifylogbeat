@@ -24,9 +24,9 @@ package config
 
 import (
 	"fmt"
-	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
+	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/libbeat/processors"
 	"path/filepath"
@@ -74,10 +74,8 @@ type SenderConfig struct {
 	ExtMeta      interface{} `config:"ext_meta"`
 
 	// Output
-	RemovePathPrefix  string `config:"remove_path_prefix"`   // 去除路径前缀
-	IsContainerStd    bool   `config:"is_container_std"`     // 是否为容器标准输出日志(docker)
-	IsCRIContainerStd bool   `config:"is_cri_container_std"` // 是否为容器标准输出日志(CRI)
-	OutputFormat      string `config:"output_format"`        // 输出格式，为了兼容老版采集器的输出格式
+	RemovePathPrefix string `config:"remove_path_prefix"` // 去除路径前缀
+	OutputFormat     string `config:"output_format"`      // 输出格式，为了兼容老版采集器的输出格式
 }
 
 // TaskConfig 采集任务配置
@@ -95,6 +93,9 @@ type TaskConfig struct {
 	FilterID    string
 	ProcessorID string
 	SenderID    string
+
+	IsContainerStd    bool `config:"is_container_std"`     // 是否为容器标准输出日志(docker)
+	IsCRIContainerStd bool `config:"is_cri_container_std"` // 是否为容器标准输出日志(CRI)
 
 	RawConfig *beat.Config
 }
