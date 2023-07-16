@@ -27,10 +27,12 @@ import (
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	bkmonitoring "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/monitoring"
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/output/bkpipe_multi"
 	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/input"
 	"github.com/elastic/beats/filebeat/input/file"
+	"github.com/elastic/beats/libbeat/outputs"
 )
 
 // Task 采集任务具体实现，负责filebeat采集事件处理、过滤、打包，并发送到采集框架
@@ -41,6 +43,8 @@ type Task struct {
 	beatDone chan struct{}
 
 	input *input.Input
+
+	output outputs.Client
 }
 
 // NewTask 生成采集任务实例
@@ -72,6 +76,12 @@ func NewTask(config *cfg.TaskConfig, beatDone chan struct{}, lastStates []file.S
 	}
 	logp.L.Infof("init task finish. task Map is:", task.Node)
 
+	if task.Config.Output.Name() != "" {
+		err = bkpipe_multi.RegisterTaskOutput(task.Config.ID, task.Config.Output)
+		if err != nil {
+			return nil, fmt.Errorf("[%s] error while register output: %s", task.ID, err)
+		}
+	}
 	// 开启输出监听，持续监听数据输入
 	go task.Run()
 
@@ -96,7 +106,9 @@ func (task *Task) Run() {
 			return
 		case event := <-task.In:
 			base.CrawlerPackageSendTotal.Add(1)
-			beat.SendEvent(event.(beat.Event))
+			beatEvent := event.(beat.Event)
+			beatEvent = bkpipe_multi.SetEventTaskID(beatEvent, task.Config.ID)
+			beat.SendEvent(beatEvent)
 		}
 	}
 }
