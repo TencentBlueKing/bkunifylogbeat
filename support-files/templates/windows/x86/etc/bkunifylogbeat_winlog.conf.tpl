@@ -21,8 +21,6 @@ local: {% for item in local %}
       {% endfor %}
       {% endif %}
 
-      {% if item.output is defined and item.output %}
-      {{ item.output.type }}: {{ item.output.params }}
-      {% endif %}
+      {% if item.output is defined and item.output %}{{ item.output.type }}: {{ item.output.params }}{% endif %}
 
 {% endfor %}{% endif %}
