@@ -97,6 +97,8 @@ type TaskConfig struct {
 	IsContainerStd    bool `config:"is_container_std"`     // 是否为容器标准输出日志(docker)
 	IsCRIContainerStd bool `config:"is_cri_container_std"` // 是否为容器标准输出日志(CRI)
 
+	Output common.ConfigNamespace `config:"output"`
+
 	RawConfig *beat.Config
 }
 

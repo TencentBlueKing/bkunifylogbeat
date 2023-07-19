@@ -1,6 +1,6 @@
 logging.level: error
 max_procs: 1
-output.bkpipe:
+output.bkpipe_multi:
   endpoint: {{ plugin_path.endpoint }}
 {%- if nodeman is defined %}
   hostip: {{ nodeman.host.inner_ip }}
