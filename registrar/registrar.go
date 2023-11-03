@@ -24,6 +24,7 @@ package registrar
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -44,6 +45,7 @@ const (
 	timeKey         = "localtime"
 	stateNanosecond = 1
 	stateNotManage  = -2
+	stateKeyPrefix  = "state:"
 )
 
 var (
@@ -62,6 +64,8 @@ type Registrar struct {
 	gcRequired   bool         // gcRequired is set if registry state needs to be gc'ed before the next write
 	flushTimeout time.Duration
 	gcFrequency  time.Duration
+
+	stateIDCache map[string]struct{} // 等待持久化的状态ID
 }
 
 // New creates a new Registrar instance, updating the registry file on
@@ -75,6 +79,8 @@ func New(config cfg.Registry) (*Registrar, error) {
 		Channel:      make(chan []file.State, 1),
 		flushTimeout: config.FlushTimeout,
 		gcFrequency:  config.GcFrequency,
+
+		stateIDCache: make(map[string]struct{}),
 	}
 	return r, r.Init()
 }
@@ -102,21 +108,56 @@ func (r *Registrar) Init() error {
 		return fmt.Errorf("parse time error: %v", err)
 	}
 
-	// get registrar
+	// get v1 registrar key
 	str, err = bkStorage.Get(registrarKey)
 	if err != nil {
-		if err == bkStorage.ErrNotFound {
-			return nil
-		} else {
+		if !errors.Is(err, bkStorage.ErrNotFound) {
 			return fmt.Errorf("get %s from bkStorage err: %v", registrarKey, err)
+		} else {
+			// registrarKey 不存在的情况，说明是没有进度文件、或者已经迁移完成，直接从新的 key 获取进度
+			values, err := bkStorage.List(stateKeyPrefix)
+			if err != nil {
+				return fmt.Errorf("list keys with prefix %s from bkStorage err: %v", stateKeyPrefix, err)
+			}
+
+			// merge states with two versions
+			for _, v := range values {
+				var state file.State
+				err = json.Unmarshal([]byte(v), &state)
+				if err != nil {
+					logp.L.Errorf("json unmarshal single state error, %s", str)
+					continue
+				}
+				states = append(states, state)
+			}
 		}
+	} else {
+		// 首次部署新版本，能拿到 registrarKey ，进行一次 key 的迁移
+		err = json.Unmarshal([]byte(str), &states)
+		if err != nil {
+			logp.L.Errorf("json unmarshal error, %s", str)
+			return fmt.Errorf("error decoding states: %s", err)
+		}
+
+		logp.L.Infof("load states from key=>%s and migrate to new key, count=>%d", registrarKey, len(states))
+
+		// 将 registrarKey 的数据转存至新的 key 以及数据结构
+		for _, state := range states {
+			bytes, err := json.Marshal(state)
+			if err != nil {
+				logp.L.Errorf("Writing of registry for %s returned error: %v. Continuing...", state.ID(), err)
+				continue
+			}
+			bkStorage.Set(r.getStateStorageKey(state), string(bytes), 0)
+		}
+
+		// 写入完成后，删除 registrarKey
+		bkStorage.Del(registrarKey)
+
+		logp.L.Infof("migrate states from key=>%s success, delete this key", registrarKey)
+
 	}
 
-	err = json.Unmarshal([]byte(str), &states)
-	if err != nil {
-		logp.L.Errorf("json unmarshal error, %s", str)
-		return fmt.Errorf("error decoding states: %s", err)
-	}
 	states = r.migrate(states)
 	logp.L.Infof("load states: time=>%s, count=>%d, flush=>%s, gcFrequency=>%s",
 		t, len(states), r.flushTimeout, r.gcFrequency)
@@ -196,6 +237,7 @@ func (r *Registrar) onEvents(states []file.State) {
 		} else {
 			r.states.UpdateWithTs(s, ts)
 		}
+		r.addStateIDCache(s.ID())
 	}
 }
 
@@ -205,19 +247,28 @@ func (r *Registrar) flushRegistry() {
 
 	// First clean up states
 	r.gcStates()
-	states := r.GetStates()
-	bytes, err := json.Marshal(states)
-	if err != nil {
-		registrarMarshalError.Add(1)
-		logp.L.Errorf("Writing of registry returned error: %v. Continuing...", err)
-		return
-	}
+	statesMap := r.GetStatesMap()
 
 	//采集文件数量
-	registrarFiles.Set(int64(len(states)))
+	registrarFiles.Set(int64(len(statesMap)))
 
-	bkStorage.Set(registrarKey, string(bytes), 0)
 	bkStorage.Set(timeKey, time.Now().Format(time.UnixDate), 0)
+
+	// 将有变更的inode进度进行持久化
+	for stateID := range r.stateIDCache {
+		if state, ok := statesMap[stateID]; ok {
+			bytes, err := json.Marshal(state)
+			if err != nil {
+				registrarMarshalError.Add(1)
+				logp.L.Errorf("Writing of registry for %s returned error: %v. Continuing...", state.ID(), err)
+				continue
+			}
+			bkStorage.Set(r.getStateStorageKey(state), string(bytes), 0)
+		}
+	}
+
+	r.clearStateIDCache()
+
 }
 
 // migrate file state
@@ -262,6 +313,7 @@ func (r *Registrar) gcStates() {
 		if state.TTL == stateNotManage {
 			state.TTL = stateNanosecond
 			r.states.Update(state)
+			r.addStateIDCache(state.ID())
 		}
 	}
 
@@ -272,5 +324,43 @@ func (r *Registrar) gcStates() {
 	logp.L.Infof("Registrar states cleaned up. Before: %d, After: %d, Pending: %d",
 		beforeCount, beforeCount-cleanedStates, pendingClean)
 
+	statesMap := r.GetStatesMap()
+
+	// 比对gc前后的key，然后进行删除
+	for _, state := range states {
+		if _, ok := statesMap[state.ID()]; !ok {
+			// 在新状态列表中不存在，则删除
+			bkStorage.Del(fmt.Sprintf("%s%s", stateKeyPrefix, state.ID()))
+		}
+	}
+
 	r.gcRequired = false
+}
+
+// addStateIDCache 将状态ID写入缓存
+func (r *Registrar) addStateIDCache(stateID string) {
+	r.stateIDCache[stateID] = struct{}{}
+}
+
+// clearStateIDCache 情况状态ID缓存
+func (r *Registrar) clearStateIDCache() {
+	r.stateIDCache = make(map[string]struct{})
+}
+
+// GetStatesMap 获取 State ID 到 State 的映射对象
+func (r *Registrar) GetStatesMap() map[string]file.State {
+	states := r.GetStates()
+
+	// 构造状态ID集合
+	statesMap := make(map[string]file.State)
+	for _, state := range states {
+		statesMap[state.ID()] = state
+	}
+
+	return statesMap
+}
+
+// getStateStorageKey 获取 state 的存储 key
+func (r *Registrar) getStateStorageKey(state file.State) string {
+	return fmt.Sprintf("%s%s", stateKeyPrefix, state.ID())
 }
