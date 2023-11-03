@@ -133,12 +133,10 @@ func (r *Registrar) Init() error {
 		}
 	} else {
 		// 首次部署新版本，能拿到 registrarKey ，进行一次 key 的迁移
-		if str != "" {
-			err = json.Unmarshal([]byte(str), &states)
-			if err != nil {
-				logp.L.Errorf("json unmarshal error, %s", str)
-				return fmt.Errorf("error decoding states: %s", err)
-			}
+		err = json.Unmarshal([]byte(str), &states)
+		if err != nil {
+			logp.L.Errorf("json unmarshal error, %s", str)
+			return fmt.Errorf("error decoding states: %s", err)
 		}
 
 		logp.L.Infof("load states from key=>%s and migrate to new key, count=>%d", registrarKey, len(states))
@@ -150,7 +148,7 @@ func (r *Registrar) Init() error {
 				logp.L.Errorf("Writing of registry for %s returned error: %v. Continuing...", state.ID(), err)
 				continue
 			}
-			bkStorage.Set(fmt.Sprintf("%s%s", stateKeyPrefix, state.ID()), string(bytes), 0)
+			bkStorage.Set(r.getStateStorageKey(state), string(bytes), 0)
 		}
 
 		// 写入完成后，删除 registrarKey
@@ -265,7 +263,7 @@ func (r *Registrar) flushRegistry() {
 				logp.L.Errorf("Writing of registry for %s returned error: %v. Continuing...", state.ID(), err)
 				continue
 			}
-			bkStorage.Set(fmt.Sprintf("%s%s", stateKeyPrefix, state.ID()), string(bytes), 0)
+			bkStorage.Set(r.getStateStorageKey(state), string(bytes), 0)
 		}
 	}
 
@@ -360,4 +358,9 @@ func (r *Registrar) GetStatesMap() map[string]file.State {
 	}
 
 	return statesMap
+}
+
+// getStateStorageKey 获取 state 的存储 key
+func (r *Registrar) getStateStorageKey(state file.State) string {
+	return fmt.Sprintf("%s%s", stateKeyPrefix, state.ID())
 }
