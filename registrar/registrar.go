@@ -237,7 +237,7 @@ func (r *Registrar) onEvents(states []file.State) {
 		} else {
 			r.states.UpdateWithTs(s, ts)
 		}
-		r.putStateIDCache(s.ID())
+		r.addStateIDCache(s.ID())
 	}
 }
 
@@ -313,7 +313,7 @@ func (r *Registrar) gcStates() {
 		if state.TTL == stateNotManage {
 			state.TTL = stateNanosecond
 			r.states.Update(state)
-			r.putStateIDCache(state.ID())
+			r.addStateIDCache(state.ID())
 		}
 	}
 
@@ -337,8 +337,8 @@ func (r *Registrar) gcStates() {
 	r.gcRequired = false
 }
 
-// putStateIDCache 将状态ID写入缓存
-func (r *Registrar) putStateIDCache(stateID string) {
+// addStateIDCache 将状态ID写入缓存
+func (r *Registrar) addStateIDCache(stateID string) {
 	r.stateIDCache[stateID] = struct{}{}
 }
 
