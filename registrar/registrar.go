@@ -247,16 +247,15 @@ func (r *Registrar) flushRegistry() {
 
 	// First clean up states
 	r.gcStates()
-	statesMap := r.GetStatesMap()
 
 	//采集文件数量
-	registrarFiles.Set(int64(len(statesMap)))
+	registrarFiles.Set(int64(r.states.Count()))
 
 	bkStorage.Set(timeKey, time.Now().Format(time.UnixDate), 0)
 
 	// 将有变更的inode进度进行持久化
 	for stateID := range r.stateIDCache {
-		if state, ok := statesMap[stateID]; ok {
+		if state := r.states.FindPrevious(file.State{Id: stateID}); !state.IsEmpty() {
 			bytes, err := json.Marshal(state)
 			if err != nil {
 				registrarMarshalError.Add(1)
@@ -324,13 +323,12 @@ func (r *Registrar) gcStates() {
 	logp.L.Infof("Registrar states cleaned up. Before: %d, After: %d, Pending: %d",
 		beforeCount, beforeCount-cleanedStates, pendingClean)
 
-	statesMap := r.GetStatesMap()
-
 	// 比对gc前后的key，然后进行删除
 	for _, state := range states {
-		if _, ok := statesMap[state.ID()]; !ok {
+		newState := r.states.FindPrevious(file.State{Id: state.ID()})
+		if newState.IsEmpty() {
 			// 在新状态列表中不存在，则删除
-			bkStorage.Del(fmt.Sprintf("%s%s", stateKeyPrefix, state.ID()))
+			bkStorage.Del(r.getStateStorageKey(state))
 		}
 	}
 
@@ -345,19 +343,6 @@ func (r *Registrar) addStateIDCache(stateID string) {
 // clearStateIDCache 情况状态ID缓存
 func (r *Registrar) clearStateIDCache() {
 	r.stateIDCache = make(map[string]struct{})
-}
-
-// GetStatesMap 获取 State ID 到 State 的映射对象
-func (r *Registrar) GetStatesMap() map[string]file.State {
-	states := r.GetStates()
-
-	// 构造状态ID集合
-	statesMap := make(map[string]file.State)
-	for _, state := range states {
-		statesMap[state.ID()] = state
-	}
-
-	return statesMap
 }
 
 // getStateStorageKey 获取 state 的存储 key
