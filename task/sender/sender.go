@@ -228,8 +228,13 @@ func (send *Sender) cacheSend(event *util.Data) error {
 		send.cache[source] = []*util.Data{event}
 	}
 
+	totalCount := 0
+	for _, evt := range send.cache[source] {
+		totalCount += evt.Event.Count()
+	}
+
 	// if msg count reach max count, clear cache
-	if len(send.cache[source]) >= send.sendConfig.PackageCount {
+	if totalCount >= send.sendConfig.PackageCount {
 		send.send(send.cache[source])
 		// clear cache
 		send.cache[source] = []*util.Data{}

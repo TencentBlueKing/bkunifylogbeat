@@ -26,7 +26,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	bkmonitoring "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/monitoring"
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
@@ -141,66 +140,143 @@ func (f *Filters) Run() {
 			return
 		case e := <-f.In:
 			data := e.(*util.Data)
-			event := &data.Event
-
-			var text string
-			var ok bool
-			text, ok = event.Fields["data"].(string)
-			if !ok || f.Delimiter == "" {
-				for _, out := range f.Outs {
-					select {
-					case <-f.End:
-						logp.L.Infof("node filter(%s) is done", f.ID)
-						return
-					case out <- data:
-						filterHandledTotal.Add(1)
-					}
-				}
-				break
+			if data.Event.HasTexts() {
+				f.batchFilter(data)
+			} else {
+				f.singleFilter(data)
 			}
+		}
+	}
+}
 
-			// index为N时，数组切分最少需要分成N+1段
-			words := strings.SplitN(text, f.Delimiter, f.filterMaxIndex+1)
-			for i := range words {
-				words[i] = strings.TrimSpace(words[i])
+// singleFilter 常规单行处理模式
+func (f *Filters) singleFilter(data *util.Data) {
+	event := &data.Event
+
+	var text string
+	var ok bool
+	text, ok = event.Fields["data"].(string)
+	if !ok || f.Delimiter == "" {
+		for _, out := range f.Outs {
+			select {
+			case <-f.End:
+				logp.L.Infof("node filter(%s) is done", f.ID)
+				return
+			case out <- data:
+				filterHandledTotal.Add(1)
 			}
-			for processorID, taskConfig := range f.taskConfigMaps {
-				event := f.Handle(words, text, taskConfig, event)
-				if event == nil {
-					// update metric
-					{
-						filterDroppedTotal.Add(1)
-						taskNodeList, ok := f.TaskNodeList[processorID]
-						if ok {
-							for _, tNode := range taskNodeList {
-								base.CrawlerDropped.Add(1)
-								tNode.CrawlerDropped.Add(1)
-							}
-						}
-					}
-					continue
-				}
+		}
+		return
+	}
 
-				out, ok := f.Outs[processorID]
+	// index为N时，数组切分最少需要分成N+1段
+	words := strings.SplitN(text, f.Delimiter, f.filterMaxIndex+1)
+	for i := range words {
+		words[i] = strings.TrimSpace(words[i])
+	}
+	for processorID, taskConfig := range f.taskConfigMaps {
+		matched := f.Handle(words, text, taskConfig)
+		if !matched {
+			// update metric
+			{
+				filterDroppedTotal.Add(1)
+				taskNodeList, ok := f.TaskNodeList[processorID]
 				if ok {
-					select {
-					case <-f.End:
-						logp.L.Infof("node filter(%s) is done", f.ID)
-						return
-					case out <- data:
-						filterHandledTotal.Add(1)
+					for _, tNode := range taskNodeList {
+						base.CrawlerDropped.Add(1)
+						tNode.CrawlerDropped.Add(1)
 					}
 				}
 			}
+			continue
+		}
 
+		out, ok := f.Outs[processorID]
+		if ok {
+			select {
+			case <-f.End:
+				logp.L.Infof("node filter(%s) is done", f.ID)
+				return
+			case out <- data:
+				filterHandledTotal.Add(1)
+			}
+		}
+	}
+}
+
+// batchFilter 针对多行文本的批量处理
+func (f *Filters) batchFilter(data *util.Data) {
+	texts := data.Event.GetTexts()
+
+	if f.Delimiter == "" {
+		for _, out := range f.Outs {
+			select {
+			case <-f.End:
+				logp.L.Infof("node filter(%s) is done", f.ID)
+				return
+			case out <- data:
+				filterHandledTotal.Add(int64(len(texts)))
+			}
+		}
+		return
+	}
+
+	wordsInTexts := make([][]string, 0, len(texts))
+	for _, text := range texts {
+		wordsInTexts = append(wordsInTexts, strings.SplitN(text, f.Delimiter, f.filterMaxIndex+1))
+	}
+
+	for processorID, taskConfig := range f.taskConfigMaps {
+
+		matchedTexts := make([]string, 0, len(texts))
+
+		for idx, words := range wordsInTexts {
+			matched := f.Handle(words, texts[idx], taskConfig)
+			if matched {
+				matchedTexts = append(matchedTexts, texts[idx])
+				continue
+			}
+		}
+
+		unmatchedCount := int64(len(texts) - len(matchedTexts))
+
+		if unmatchedCount > 0 {
+			// update metric
+			filterDroppedTotal.Add(unmatchedCount)
+			taskNodeList, ok := f.TaskNodeList[processorID]
+			if ok {
+				for _, tNode := range taskNodeList {
+					base.CrawlerDropped.Add(unmatchedCount)
+					tNode.CrawlerDropped.Add(unmatchedCount)
+				}
+			}
+		}
+
+		if len(matchedTexts) > 0 {
+			if out, ok := f.Outs[processorID]; ok {
+
+				// 复制一个新的事件出来，只修改 Texts 字段
+				event := data.GetEvent()
+				event.Texts = matchedTexts
+				taskData := &util.Data{Event: event}
+				taskData.SetState(data.GetState())
+
+				select {
+				case <-f.End:
+					logp.L.Infof("node filter(%s) is done", f.ID)
+					return
+				case out <- taskData:
+					filterHandledTotal.Add(int64(len(matchedTexts)))
+				}
+			}
 		}
 	}
 }
 
 // Handle 过滤数据
-func (f *Filters) Handle(words []string, text string, taskConfig *config.TaskConfig, event *beat.Event) *beat.Event {
+func (f *Filters) Handle(words []string, text string, taskConfig *config.TaskConfig) bool {
 	if !taskConfig.HasFilter {
-		return event
+		return true
 	}
 
 	for _, filterConfig := range taskConfig.Filters {
@@ -228,8 +304,8 @@ func (f *Filters) Handle(words []string, text string, taskConfig *config.TaskCon
 			}
 		}
 		if access {
-			return event
+			return true
 		}
 	}
-	return nil
+	return false
 }

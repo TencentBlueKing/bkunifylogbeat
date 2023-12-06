@@ -25,9 +25,9 @@
 package formatter
 
 import (
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/utils"
-	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/elastic/beats/filebeat/util"
 	"strings"
 )
@@ -65,20 +65,18 @@ func (f v1Formatter) Format(events []*util.Data) beat.MapStr {
 		"time":     timestamp,
 	}
 
-	hasEvent := false
-
 	var texts []string
 	for _, event := range events {
-		item := event.Event.Fields
-		if item == nil {
-			continue
+		for _, text := range event.Event.GetTexts() {
+			if text == "" {
+				continue
+			}
+			texts = append(texts, text)
 		}
-		hasEvent = true
-		texts = append(texts, item["data"].(string))
 	}
 
 	// 仅需要更新采集状态的事件数
-	if !hasEvent {
+	if len(texts) == 0 {
 		return nil
 	}
 	data["data"] = texts

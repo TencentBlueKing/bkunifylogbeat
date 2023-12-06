@@ -36,6 +36,11 @@ type v2Formatter struct {
 	taskConfig *config.TaskConfig
 }
 
+type LineItem struct {
+	Data           string `json:"data"`
+	IterationIndex int    `json:"iterationindex"`
+}
+
 // NewV2Formatter : bkunifylogbeat日志采集输出格式
 func NewV2Formatter(config *config.TaskConfig) (*v2Formatter, error) {
 	f := &v2Formatter{
@@ -67,21 +72,42 @@ func (f v2Formatter) Format(events []*util.Data) beat.MapStr {
 
 	hasEvent := false
 
-	var items []beat.MapStr
-	for index, event := range events {
-		item := event.Event.Fields.Clone()
-		if item == nil {
-			continue
+	if events[0].Event.HasTexts() {
+		itemsCount := 0
+		for _, event := range events {
+			itemsCount += event.Event.Count()
 		}
-		hasEvent = true
-		item["iterationindex"] = index
-		items = append(items, item)
+		items := make([]LineItem, 0, itemsCount)
+		index := 0
+		for _, event := range events {
+			for _, text := range event.Event.Texts {
+				if text == "" {
+					continue
+				}
+				items = append(items, LineItem{Data: text, IterationIndex: index})
+				index += 1
+			}
+		}
+		data["items"] = items
+		hasEvent = len(items) > 0
+	} else {
+		var items []beat.MapStr
+		for index, event := range events {
+			item := event.Event.Fields.Clone()
+			if item == nil {
+				continue
+			}
+			item["iterationindex"] = index
+			items = append(items, item)
+		}
+		data["items"] = items
+		hasEvent = len(items) > 0
 	}
+
 	// 仅需要更新采集状态的事件数
 	if !hasEvent {
 		return nil
 	}
-	data["items"] = items
 
 	//发送正常事件
 	if f.taskConfig.ExtMeta != nil {

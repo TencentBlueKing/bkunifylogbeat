@@ -26,14 +26,14 @@ import (
 	"fmt"
 	"time"
 
-	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
+	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/dustin/go-humanize"
 )
 
-//如果未配置close_inactive则直接默认为5分钟
+// 如果未配置close_inactive则直接默认为5分钟
 type LogConfig struct {
-	ScanFrequency  time.Duration `config:"scan_frequency" validate:"min=0,nonzero"`
+	ScanFrequency time.Duration `config:"scan_frequency" validate:"min=0,nonzero"`
 
 	CloseInactive time.Duration `config:"close_inactive"`
 	IgnoreOlder   time.Duration `config:"ignore_older"`
@@ -62,6 +62,9 @@ func init() {
 		"encoding":   "utf-8",
 		"symlinks":   true,
 		"max_bytes":  200 * humanize.KByte,
+
+		// 打开后，采集速率直接起飞
+		"ludicrous_mode": true,
 	}
 	err := cfg.Register("log", func(rawConfig *beat.Config) (*beat.Config, error) {
 		var err error
@@ -98,14 +101,14 @@ func init() {
 
 		if logConfig.CleanInactive > 0 {
 			// 2. 如果配置了CleanInactive，那么必须大于 IgnoreOlder + ScanFrequency
-			if logConfig.CleanInactive < logConfig.IgnoreOlder + logConfig.ScanFrequency {
+			if logConfig.CleanInactive < logConfig.IgnoreOlder+logConfig.ScanFrequency {
 				defaultConfig["clean_inactive"] = logConfig.IgnoreOlder + logConfig.ScanFrequency + 1*time.Hour
 			}
 		} else {
 			// 如果没有配置CleanInactive，那么给一个默认值，半年
 			// 对于长时间未写的文件，采集进度保留半年，半年后如果再次写入会出现将整个文件重新读取现象。
 			// 可适当调大，但是更建议对业务日志本身做处理，增加轮转机制，而不是一直写同一个日志文件
-			defaultConfig["clean_inactive"] = logConfig.IgnoreOlder + logConfig.ScanFrequency + 180 * 24 * time.Hour
+			defaultConfig["clean_inactive"] = logConfig.IgnoreOlder + logConfig.ScanFrequency + 180*24*time.Hour
 		}
 
 		err = rawConfig.Merge(defaultConfig)
