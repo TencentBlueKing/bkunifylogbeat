@@ -174,18 +174,20 @@ func (send *Sender) Run() {
 			send.cache = make(map[string][]*util.Data)
 
 		case e := <-send.In:
+			event := e.(*util.Data)
 			// update metric
 			{
-				base.CrawlerSendTotal.Add(1)
-				senderReceived.Add(1)
+				beatEvent := event.GetEvent()
+				eventCount := int64(beatEvent.Count())
+				base.CrawlerSendTotal.Add(eventCount)
+				senderReceived.Add(eventCount)
 				for _, taskNodeList := range send.TaskNodeList {
 					for _, tNode := range taskNodeList {
-						tNode.CrawlerSendTotal.Add(1)
-						tNode.SenderReceive.Add(1)
+						tNode.CrawlerSendTotal.Add(eventCount)
+						tNode.SenderReceive.Add(eventCount)
 					}
 				}
 			}
-			event := e.(*util.Data)
 			err := send.cacheSend(event)
 			if err != nil {
 				logp.L.Errorf("send event error, %v", err)
