@@ -61,7 +61,7 @@ func init() {
 		"tail_files": true,
 		"encoding":   "utf-8",
 		"symlinks":   true,
-		"max_bytes":  200 * humanize.KByte,
+		"max_bytes":  1 * humanize.MByte,
 
 		// 打开后，采集速率直接起飞
 		"ludicrous_mode": true,
