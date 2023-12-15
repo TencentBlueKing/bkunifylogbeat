@@ -20,44 +20,6 @@
 // WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 // SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package main
+//go:build jsonstd
 
-import (
-	"fmt"
-	"os"
-
-	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
-	"github.com/TencentBlueKing/bkunifylogbeat/beater"
-	_ "github.com/TencentBlueKing/bkunifylogbeat/json"
-	"github.com/elastic/beats/libbeat/cmd/instance"
-	"github.com/elastic/beats/libbeat/publisher/processing"
-)
-
-var (
-	beatName = "bkunifylogbeat"
-	version  = "7.2.1"
-)
-
-func main() {
-	//step 1: 初始化采集器
-	settings := instance.Settings{
-		Processing: processing.MakeDefaultSupport(false),
-	}
-	config, err := beat.InitWithPublishConfig(beatName, version, beat.PublishConfig{
-		PublishMode: beat.GuaranteedSend,
-		ACKEvents:   beater.AckEvents,
-	}, settings)
-	if err != nil {
-		fmt.Printf("Init filed with error: %s\n", err.Error())
-		os.Exit(1)
-	}
-
-	// step 2：加载配置
-	bt, err := beater.New(config)
-	if err != nil {
-		fmt.Printf("New failed with error: %s\n\n", err.Error())
-		os.Exit(1)
-	}
-	// step 3：主动开启采集器
-	bt.Run()
-}
+package json
