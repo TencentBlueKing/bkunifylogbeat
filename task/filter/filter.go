@@ -284,21 +284,23 @@ func (f *Filters) Handle(words []string, text string, taskConfig *config.TaskCon
 		for _, condition := range filterConfig.Conditions {
 			// 匹配第n列，如果n小于等于0，则变更为整个字符串包含
 			if condition.Index <= 0 {
-				// 判断 op
-				if condition.Op == "!=" {
-					if strings.Contains(text, condition.Key) {
+				op := condition.Op
+
+				// 兼容旧数据 历史数据的字符串匹配包含 op 固定为 '='
+				if op == "=" {
+					op = "include"
+				}
+
+				operationFunc := getOperation(op)
+				if operationFunc != nil {
+					if !operationFunc(text, condition.Key) {
 						access = false
 						break
 					} else {
 						continue
 					}
 				} else {
-					if !strings.Contains(text, condition.Key) {
-						access = false
-						break
-					} else {
-						continue
-					}
+					continue
 				}
 			}
 			operationFunc := getOperation(condition.Op)

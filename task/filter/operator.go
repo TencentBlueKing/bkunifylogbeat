@@ -22,12 +22,62 @@
 
 package filter
 
+import (
+	"fmt"
+	"regexp"
+	"strings"
+)
+
 func equal(a, b string) bool {
 	return a == b
 }
 
 func notEqual(a, b string) bool {
 	return a != b
+}
+
+func include(a, b string) bool {
+	if strings.Contains(a, b) {
+		return true
+	} else {
+		return false
+	}
+}
+
+func exclude(a, b string) bool {
+	if strings.Contains(a, b) {
+		return false
+	} else {
+		return true
+	}
+}
+
+func regexMatch(a, b string) bool {
+	regexpObject, err := regexp.Compile(b)
+	if err != nil {
+		fmt.Println("正则表达式编译失败:", err)
+		return false
+	}
+
+	if regexpObject.MatchString(a) {
+		return true
+	} else {
+		return false
+	}
+}
+
+func regexNotMatch(a, b string) bool {
+	regexpObject, err := regexp.Compile(b)
+	if err != nil {
+		fmt.Println("正则表达式编译失败:", err)
+		return false
+	}
+
+	if regexpObject.MatchString(a) {
+		return false
+	} else {
+		return true
+	}
 }
 
 // sequence same with config define
@@ -42,10 +92,18 @@ const (
 )
 
 func getOperation(op string) func(a, b string) bool {
-	if op == "=" {
+	if op == "=" || op == "eq" {
 		return equal
-	} else if op == "!=" {
+	} else if op == "!=" || op == "neq" {
 		return notEqual
+	} else if op == "include" {
+		return include
+	} else if op == "exclude" {
+		return exclude
+	} else if op == "regex" {
+		return regexMatch
+	} else if op == "nregex" {
+		return regexNotMatch
 	} else {
 		return nil
 	}
