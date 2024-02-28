@@ -130,12 +130,22 @@ func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
 
 	// Filter
 	config.HasFilter = false
+	validOps := map[string]bool{
+		"=":       true,
+		"!=":      true,
+		"include": true,
+		"exclude": true,
+		"eq":      true,
+		"neq":     true,
+		"regex":   true,
+		"nregex":  true,
+	}
 	if len(config.Delimiter) == 1 {
 		for _, f := range config.Filters {
 			// op must be "=" or "!="
 			for _, condition := range f.Conditions {
-				if condition.Op != "=" && condition.Op != "!=" {
-					return nil, fmt.Errorf("op must = or !=")
+				if !validOps[condition.Op] {
+					return nil, fmt.Errorf("op must = or != or include or exclude or eq or neq or regex or nregex")
 				}
 				condition.Key = strings.TrimSpace(condition.Key)
 			}

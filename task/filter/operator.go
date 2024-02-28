@@ -23,8 +23,6 @@
 package filter
 
 import (
-	"fmt"
-	"regexp"
 	"strings"
 )
 
@@ -36,48 +34,12 @@ func notEqual(a, b string) bool {
 	return a != b
 }
 
-func include(a, b string) bool {
-	if strings.Contains(a, b) {
-		return true
-	} else {
-		return false
-	}
+func include(text, subString string) bool {
+	return strings.Contains(text, subString)
 }
 
-func exclude(a, b string) bool {
-	if strings.Contains(a, b) {
-		return false
-	} else {
-		return true
-	}
-}
-
-func regexMatch(a, b string) bool {
-	regexpObject, err := regexp.Compile(b)
-	if err != nil {
-		fmt.Println("正则表达式编译失败:", err)
-		return false
-	}
-
-	if regexpObject.MatchString(a) {
-		return true
-	} else {
-		return false
-	}
-}
-
-func regexNotMatch(a, b string) bool {
-	regexpObject, err := regexp.Compile(b)
-	if err != nil {
-		fmt.Println("正则表达式编译失败:", err)
-		return false
-	}
-
-	if regexpObject.MatchString(a) {
-		return false
-	} else {
-		return true
-	}
+func exclude(text, subString string) bool {
+	return !strings.Contains(text, subString)
 }
 
 // sequence same with config define
@@ -91,20 +53,26 @@ const (
 	NotEqualOperation
 )
 
+const (
+	opEqual    = "="
+	opNotEqual = "!="
+	opInclude  = "include"
+	opExclude  = "exclude"
+	opRegex    = "regex"
+	opNregex   = "nregex"
+)
+
 func getOperation(op string) func(a, b string) bool {
-	if op == "=" || op == "eq" {
+	switch op {
+	case opEqual, "eq":
 		return equal
-	} else if op == "!=" || op == "neq" {
+	case opNotEqual, "neq":
 		return notEqual
-	} else if op == "include" {
+	case opInclude:
 		return include
-	} else if op == "exclude" {
+	case opExclude:
 		return exclude
-	} else if op == "regex" {
-		return regexMatch
-	} else if op == "nregex" {
-		return regexNotMatch
-	} else {
+	default:
 		return nil
 	}
 }
