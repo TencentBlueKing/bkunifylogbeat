@@ -30,15 +30,17 @@ import (
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/libbeat/processors"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
 
-// ConditionConfig : 用于条件表达式，目前支持=、!=
+// ConditionConfig : 用于条件表达式，目前支持=、!=、eq、neq、include、exclude、regex、nregex
 type ConditionConfig struct {
 	Index int    `config:"index"`
 	Key   string `config:"key"`
 	Op    string `config:"op"`
+	Re    *regexp.Regexp
 }
 
 // FilterConfig line filter config
@@ -130,24 +132,33 @@ func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
 
 	// Filter
 	config.HasFilter = false
-	validOps := map[string]bool{
-		"=":       true,
-		"!=":      true,
-		"include": true,
-		"exclude": true,
-		"eq":      true,
-		"neq":     true,
-		"regex":   true,
-		"nregex":  true,
-	}
+	validOps := []string{"=", "!=", "include", "exclude", "eq", "neq", "regex", "nregex"}
 	if len(config.Delimiter) == 1 {
 		for _, f := range config.Filters {
-			// op must be "=" or "!="
-			for _, condition := range f.Conditions {
-				if !validOps[condition.Op] {
+			// op must be "=" or "!=" or "include" or "exclude" or "eq" or "neq" or "regex" or "nregex"
+			for i, condition := range f.Conditions {
+				condition.Key = strings.TrimSpace(condition.Key)
+
+				isValidOp := false
+				for _, value := range validOps {
+					if value == condition.Op {
+						isValidOp = true
+						break
+					}
+				}
+
+				if condition.Op == "regex" || condition.Op == "nregex" {
+					pattern, err := regexp.Compile(condition.Key)
+					if err != nil {
+						return nil, fmt.Errorf("正则表达式编译失败", err)
+					}
+					condition.Re = pattern
+				}
+
+				if !isValidOp {
 					return nil, fmt.Errorf("op must = or != or include or exclude or eq or neq or regex or nregex")
 				}
-				condition.Key = strings.TrimSpace(condition.Key)
+				f.Conditions[i] = condition
 			}
 			config.HasFilter = true
 		}

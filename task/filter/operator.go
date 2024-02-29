@@ -54,6 +54,8 @@ const (
 )
 
 const (
+	opEq       = "eq"
+	opNeq      = "neq"
 	opEqual    = "="
 	opNotEqual = "!="
 	opInclude  = "include"
@@ -64,9 +66,9 @@ const (
 
 func getOperation(op string) func(a, b string) bool {
 	switch op {
-	case opEqual, "eq":
+	case opEqual, opEq:
 		return equal
-	case opNotEqual, "neq":
+	case opNotEqual, opNeq:
 		return notEqual
 	case opInclude:
 		return include

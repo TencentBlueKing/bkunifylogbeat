@@ -294,13 +294,18 @@ func (f *Filters) Handle(words []string, text string, taskConfig *config.TaskCon
 				}
 
 				if op == opRegex || op == opNregex {
-					pattern, err := regexp.Compile(condition.Key)
-					if err != nil {
-						fmt.Println("正则表达式编译失败:", err)
-						access = false
-						break
+					isMatching := false
+					if condition.Re != nil {
+						isMatching = condition.Re.MatchString(text)
+					} else {
+						pattern, err := regexp.Compile(condition.Key)
+						if err != nil {
+							fmt.Println("正则表达式编译失败:", err)
+							access = false
+							break
+						}
+						isMatching = pattern.MatchString(text)
 					}
-					isMatching := pattern.MatchString(text)
 
 					if (op == opRegex && !isMatching) || (op == opNregex && isMatching) {
 						access = false
@@ -329,13 +334,18 @@ func (f *Filters) Handle(words []string, text string, taskConfig *config.TaskCon
 				break
 			}
 			if op == opRegex || op == opNregex {
-				pattern, err := regexp.Compile(condition.Key)
-				if err != nil {
-					fmt.Println("正则表达式编译失败:", err)
-					access = false
-					break
+				isMatching := false
+				if condition.Re != nil {
+					isMatching = condition.Re.MatchString(words[condition.Index-1])
+				} else {
+					pattern, err := regexp.Compile(condition.Key)
+					if err != nil {
+						fmt.Println("正则表达式编译失败:", err)
+						access = false
+						break
+					}
+					isMatching = pattern.MatchString(words[condition.Index-1])
 				}
-				isMatching := pattern.MatchString(words[condition.Index-1])
 
 				if (op == opRegex && !isMatching) || (op == opNregex && isMatching) {
 					access = false
