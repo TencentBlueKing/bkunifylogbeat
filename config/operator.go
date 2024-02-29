@@ -20,38 +20,70 @@
 // WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 // SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package filter
+package config
 
 import (
+	"regexp"
 	"strings"
 )
 
-func equal(a, b string) bool {
-	return a == b
+type MatchFunc func(text string) bool
+
+func equal(value string) (*MatchFunc, error) {
+	var matcher MatchFunc = func(text string) bool {
+		return text == value
+	}
+	return &matcher, nil
 }
 
-func notEqual(a, b string) bool {
-	return a != b
+func notEqual(value string) (*MatchFunc, error) {
+	var matcher MatchFunc = func(text string) bool {
+		return text != value
+	}
+	return &matcher, nil
 }
 
-func include(text, subString string) bool {
-	return strings.Contains(text, subString)
+func include(value string) (*MatchFunc, error) {
+	var matcher MatchFunc = func(text string) bool {
+		return strings.Contains(text, value)
+	}
+	return &matcher, nil
 }
 
-func exclude(text, subString string) bool {
-	return !strings.Contains(text, subString)
+func exclude(value string) (*MatchFunc, error) {
+	var matcher MatchFunc = func(text string) bool {
+		return !strings.Contains(text, value)
+	}
+	return &matcher, nil
 }
 
-// sequence same with config define
-var operation = []func(a, b string) bool{
-	equal,
-	notEqual,
+func regex(value string) (*MatchFunc, error) {
+	pattern, err := regexp.Compile(value)
+	if err != nil {
+		var matcher MatchFunc = func(text string) bool {
+			return false
+		}
+		return &matcher, err
+	}
+	var matcher MatchFunc = func(text string) bool {
+		return pattern.MatchString(text)
+	}
+	return &matcher, nil
 }
 
-const (
-	EqualOperation = iota
-	NotEqualOperation
-)
+func nRegex(value string) (*MatchFunc, error) {
+	pattern, err := regexp.Compile(value)
+	if err != nil {
+		var matcher MatchFunc = func(text string) bool {
+			return false
+		}
+		return &matcher, err
+	}
+	var matcher MatchFunc = func(text string) bool {
+		return !pattern.MatchString(text)
+	}
+	return &matcher, nil
+}
 
 const (
 	opEq       = "eq"
@@ -64,17 +96,24 @@ const (
 	opNregex   = "nregex"
 )
 
-func getOperation(op string) func(a, b string) bool {
+func getOperationFunc(op string, value string) (*MatchFunc, error) {
 	switch op {
 	case opEqual, opEq:
-		return equal
+		return equal(value)
 	case opNotEqual, opNeq:
-		return notEqual
+		return notEqual(value)
 	case opInclude:
-		return include
+		return include(value)
 	case opExclude:
-		return exclude
+		return exclude(value)
+	case opRegex:
+		return regex(value)
+	case opNregex:
+		return nRegex(value)
 	default:
-		return nil
+		var matcher MatchFunc = func(text string) bool {
+			return false
+		}
+		return &matcher, nil
 	}
 }

@@ -23,8 +23,6 @@
 package filter
 
 import (
-	"fmt"
-	"regexp"
 	"strings"
 	"sync"
 
@@ -284,45 +282,17 @@ func (f *Filters) Handle(words []string, text string, taskConfig *config.TaskCon
 	for _, filterConfig := range taskConfig.Filters {
 		access := true
 		for _, condition := range filterConfig.Conditions {
-			op := condition.Op
+			matcher := condition.GetMatcher()
+			if matcher == nil {
+				access = false
+				break
+			}
+
 			// 匹配第n列，如果n小于等于0，则变更为整个字符串包含
 			if condition.Index <= 0 {
-
-				// 兼容旧数据 历史数据的字符串匹配包含 op 固定为 '='
-				if op == opEqual {
-					op = opInclude
-				}
-
-				if op == opRegex || op == opNregex {
-					isMatching := false
-					if condition.Re != nil {
-						isMatching = condition.Re.MatchString(text)
-					} else {
-						pattern, err := regexp.Compile(condition.Key)
-						if err != nil {
-							fmt.Println("正则表达式编译失败:", err)
-							access = false
-							break
-						}
-						isMatching = pattern.MatchString(text)
-					}
-
-					if (op == opRegex && !isMatching) || (op == opNregex && isMatching) {
-						access = false
-						break
-					} else {
-						continue
-					}
-				}
-
-				operationFunc := getOperation(op)
-				if operationFunc != nil {
-					if !operationFunc(text, condition.Key) {
-						access = false
-						break
-					} else {
-						continue
-					}
+				if !(*matcher)(text) {
+					access = false
+					break
 				} else {
 					continue
 				}
@@ -333,34 +303,9 @@ func (f *Filters) Handle(words []string, text string, taskConfig *config.TaskCon
 				access = false
 				break
 			}
-			if op == opRegex || op == opNregex {
-				isMatching := false
-				if condition.Re != nil {
-					isMatching = condition.Re.MatchString(words[condition.Index-1])
-				} else {
-					pattern, err := regexp.Compile(condition.Key)
-					if err != nil {
-						fmt.Println("正则表达式编译失败:", err)
-						access = false
-						break
-					}
-					isMatching = pattern.MatchString(words[condition.Index-1])
-				}
-
-				if (op == opRegex && !isMatching) || (op == opNregex && isMatching) {
-					access = false
-					break
-				} else {
-					continue
-				}
-			}
-
-			operationFunc := getOperation(condition.Op)
-			if operationFunc != nil {
-				if !operationFunc(words[condition.Index-1], condition.Key) {
-					access = false
-					break
-				}
+			if !(*matcher)(words[condition.Index-1]) {
+				access = false
+				break
 			}
 		}
 		if access {

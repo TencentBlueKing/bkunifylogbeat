@@ -30,17 +30,24 @@ import (
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/libbeat/processors"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 )
 
 // ConditionConfig : 用于条件表达式，目前支持=、!=、eq、neq、include、exclude、regex、nregex
 type ConditionConfig struct {
-	Index int    `config:"index"`
-	Key   string `config:"key"`
-	Op    string `config:"op"`
-	Re    *regexp.Regexp
+	Index   int    `config:"index"`
+	Key     string `config:"key"`
+	Op      string `config:"op"`
+	matcher *MatchFunc
+}
+
+func (c *ConditionConfig) GetMatcher() *MatchFunc {
+	return c.matcher
+}
+
+func (c *ConditionConfig) SetMatcher(matcher *MatchFunc) {
+	c.matcher = matcher
 }
 
 // FilterConfig line filter config
@@ -132,13 +139,21 @@ func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
 
 	// Filter
 	config.HasFilter = false
-	validOps := []string{"=", "!=", "include", "exclude", "eq", "neq", "regex", "nregex"}
+	validOps := []string{opEq, opNeq, opEqual, opNotEqual, opInclude, opExclude, opRegex, opNregex}
 	if len(config.Delimiter) == 1 {
 		for _, f := range config.Filters {
 			// op must be "=" or "!=" or "include" or "exclude" or "eq" or "neq" or "regex" or "nregex"
 			for i, condition := range f.Conditions {
+
+				// 兼容旧数据 历史数据的字符串匹配包含 op 固定为 '='
+				if condition.Index <= 0 && condition.Op == opEqual {
+					condition.Op = opInclude
+				}
+
+				// 去除字符串首尾空白字符
 				condition.Key = strings.TrimSpace(condition.Key)
 
+				// 判断 op 合法性
 				isValidOp := false
 				for _, value := range validOps {
 					if value == condition.Op {
@@ -146,18 +161,20 @@ func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
 						break
 					}
 				}
-
-				if condition.Op == "regex" || condition.Op == "nregex" {
-					pattern, err := regexp.Compile(condition.Key)
-					if err != nil {
-						return nil, fmt.Errorf("正则表达式编译失败", err)
-					}
-					condition.Re = pattern
-				}
-
 				if !isValidOp {
-					return nil, fmt.Errorf("op must = or != or include or exclude or eq or neq or regex or nregex")
+					return nil, fmt.Errorf("op must be %s", validOps)
 				}
+
+				// 初始化条件匹配方法 Matcher
+				mather, err := getOperationFunc(condition.Op, condition.Key)
+
+				if err != nil {
+					return nil, fmt.Errorf("condition.Matcher init error: %s", err.Error())
+				}
+
+				condition.SetMatcher(mather)
+
+				// 重新赋值 condition
 				f.Conditions[i] = condition
 			}
 			config.HasFilter = true
