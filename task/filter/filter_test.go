@@ -59,7 +59,7 @@ func newFilter(taskFilterConfig map[string]interface{}) *Filters {
 	return filter
 }
 
-//TestFilter: 测试原过滤器兼容
+// TestFilter: 测试原过滤器兼容
 func TestNewFilters(t *testing.T) {
 	event = beat.Event{}
 	filter := newFilter(map[string]interface{}{
@@ -158,6 +158,84 @@ func TestFilters_Handle_Multi_Condition(t *testing.T) {
 	data = tests.MockLogEvent("/test.log", "info|test")
 	filter.In <- data
 	time.Sleep(2 * time.Second)
+	if event.Fields == nil {
+		t.Error("filter error. not effect")
+		return
+	}
+}
+
+func TestFilters_Handle_Include(t *testing.T) {
+	event = beat.Event{}
+	filter := newFilter(map[string]interface{}{
+		"dataid":    "999990001",
+		"delimiter": "|",
+		"filters": []cfg.FilterConfig{
+			{
+				Conditions: []cfg.ConditionConfig{
+					{
+						Index: -1,
+						Key:   "test",
+						Op:    "include",
+					},
+				},
+			},
+		},
+	})
+
+	// not match
+	data := tests.MockLogEvent("/test.log", "not match log text")
+	filter.In <- data
+	time.Sleep(2 * time.Second)
+
+	if event.Fields != nil {
+		t.Error("filter must not match.")
+		return
+	}
+
+	// match
+	data = tests.MockLogEvent("/test.log", "test include")
+	filter.In <- data
+	time.Sleep(2 * time.Second)
+
+	if event.Fields == nil {
+		t.Error("filter error. not effect")
+		return
+	}
+}
+
+func TestFilters_Handle_Regex(t *testing.T) {
+	event = beat.Event{}
+	filter := newFilter(map[string]interface{}{
+		"dataid":    "999990001",
+		"delimiter": "|",
+		"filters": []cfg.FilterConfig{
+			{
+				Conditions: []cfg.ConditionConfig{
+					{
+						Index: -1,
+						Key:   ".*info.*",
+						Op:    "regex",
+					},
+				},
+			},
+		},
+	})
+
+	// not match
+	data := tests.MockLogEvent("/test.log", "test regex not matching")
+	filter.In <- data
+	time.Sleep(2 * time.Second)
+
+	if event.Fields != nil {
+		t.Error("filter must not match.")
+		return
+	}
+
+	// match
+	data = tests.MockLogEvent("/test.log", "test regex matching info log ending")
+	filter.In <- data
+	time.Sleep(2 * time.Second)
+
 	if event.Fields == nil {
 		t.Error("filter error. not effect")
 		return
