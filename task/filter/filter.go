@@ -288,7 +288,7 @@ func (f *Filters) Handle(words []string, text string, taskConfig *config.TaskCon
 				break
 			}
 
-			// 匹配第n列，如果n小于等于0，则变更为整个字符串包含
+			// 匹配第n列，如果n小于等于0，则变更为整个字符串匹配操作
 			if condition.Index <= 0 {
 				if !matcher(text) {
 					access = false
