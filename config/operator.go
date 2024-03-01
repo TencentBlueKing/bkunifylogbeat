@@ -106,6 +106,6 @@ func getOperationFunc(op string, value string) (MatchFunc, error) {
 	case opNregex:
 		return nRegex(value)
 	default:
-		return nil, fmt.Errorf("%s not supported", op)
+		return nil, fmt.Errorf("op:[%s] is not supported", op)
 	}
 }
