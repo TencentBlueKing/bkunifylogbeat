@@ -23,66 +23,61 @@
 package config
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 )
 
 type MatchFunc func(text string) bool
 
-func equal(value string) (*MatchFunc, error) {
-	var matcher MatchFunc = func(text string) bool {
+func equal(value string) (MatchFunc, error) {
+	matcher := func(text string) bool {
 		return text == value
 	}
-	return &matcher, nil
+	return matcher, nil
 }
 
-func notEqual(value string) (*MatchFunc, error) {
-	var matcher MatchFunc = func(text string) bool {
+func notEqual(value string) (MatchFunc, error) {
+	matcher := func(text string) bool {
 		return text != value
 	}
-	return &matcher, nil
+	return matcher, nil
 }
 
-func include(value string) (*MatchFunc, error) {
-	var matcher MatchFunc = func(text string) bool {
+func include(value string) (MatchFunc, error) {
+	matcher := func(text string) bool {
 		return strings.Contains(text, value)
 	}
-	return &matcher, nil
+	return matcher, nil
 }
 
-func exclude(value string) (*MatchFunc, error) {
-	var matcher MatchFunc = func(text string) bool {
+func exclude(value string) (MatchFunc, error) {
+	matcher := func(text string) bool {
 		return !strings.Contains(text, value)
 	}
-	return &matcher, nil
+	return matcher, nil
 }
 
-func regex(value string) (*MatchFunc, error) {
+func regex(value string) (MatchFunc, error) {
 	pattern, err := regexp.Compile(value)
 	if err != nil {
-		var matcher MatchFunc = func(text string) bool {
-			return false
-		}
-		return &matcher, err
+		return nil, err
 	}
-	var matcher MatchFunc = func(text string) bool {
+	matcher := func(text string) bool {
 		return pattern.MatchString(text)
 	}
-	return &matcher, nil
+	return matcher, nil
 }
 
-func nRegex(value string) (*MatchFunc, error) {
+func nRegex(value string) (MatchFunc, error) {
 	pattern, err := regexp.Compile(value)
 	if err != nil {
-		var matcher MatchFunc = func(text string) bool {
-			return false
-		}
-		return &matcher, err
+		return nil, err
 	}
-	var matcher MatchFunc = func(text string) bool {
+	matcher := func(text string) bool {
 		return !pattern.MatchString(text)
 	}
-	return &matcher, nil
+	return matcher, nil
 }
 
 const (
@@ -96,7 +91,7 @@ const (
 	opNregex   = "nregex"
 )
 
-func getOperationFunc(op string, value string) (*MatchFunc, error) {
+func getOperationFunc(op string, value string) (MatchFunc, error) {
 	switch op {
 	case opEqual, opEq:
 		return equal(value)
@@ -111,9 +106,6 @@ func getOperationFunc(op string, value string) (*MatchFunc, error) {
 	case opNregex:
 		return nRegex(value)
 	default:
-		var matcher MatchFunc = func(text string) bool {
-			return false
-		}
-		return &matcher, nil
+		return nil, fmt.Errorf("%s not supported", op)
 	}
 }

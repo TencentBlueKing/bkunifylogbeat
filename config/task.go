@@ -36,18 +36,14 @@ import (
 
 // ConditionConfig : 用于条件表达式，目前支持=、!=、eq、neq、include、exclude、regex、nregex
 type ConditionConfig struct {
-	Index   int    `config:"index"`
-	Key     string `config:"key"`
-	Op      string `config:"op"`
-	matcher *MatchFunc
+	Index  int    `config:"index"`
+	Key    string `config:"key"`
+	Op     string `config:"op"`
+	mather MatchFunc
 }
 
-func (c *ConditionConfig) GetMatcher() *MatchFunc {
-	return c.matcher
-}
-
-func (c *ConditionConfig) SetMatcher(matcher *MatchFunc) {
-	c.matcher = matcher
+func (c *ConditionConfig) GetMatcher() MatchFunc {
+	return c.mather
 }
 
 // FilterConfig line filter config
@@ -139,7 +135,6 @@ func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
 
 	// Filter
 	config.HasFilter = false
-	validOps := []string{opEq, opNeq, opEqual, opNotEqual, opInclude, opExclude, opRegex, opNregex}
 	if len(config.Delimiter) == 1 {
 		for _, f := range config.Filters {
 			// op must be "=" or "!=" or "include" or "exclude" or "eq" or "neq" or "regex" or "nregex"
@@ -153,26 +148,14 @@ func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
 				// 去除字符串首尾空白字符
 				condition.Key = strings.TrimSpace(condition.Key)
 
-				// 判断 op 合法性
-				isValidOp := false
-				for _, value := range validOps {
-					if value == condition.Op {
-						isValidOp = true
-						break
-					}
-				}
-				if !isValidOp {
-					return nil, fmt.Errorf("op must be %s", validOps)
-				}
-
 				// 初始化条件匹配方法 Matcher
 				mather, err := getOperationFunc(condition.Op, condition.Key)
 
 				if err != nil {
-					return nil, fmt.Errorf("condition.Matcher init error: %s", err.Error())
+					return nil, fmt.Errorf("condition [%+v] init mather error: %s", condition, err.Error())
 				}
 
-				condition.SetMatcher(mather)
+				condition.mather = mather
 
 				// 重新赋值 condition
 				f.Conditions[i] = condition

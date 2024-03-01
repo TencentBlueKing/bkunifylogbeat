@@ -290,7 +290,7 @@ func (f *Filters) Handle(words []string, text string, taskConfig *config.TaskCon
 
 			// 匹配第n列，如果n小于等于0，则变更为整个字符串包含
 			if condition.Index <= 0 {
-				if !(*matcher)(text) {
+				if !matcher(text) {
 					access = false
 					break
 				} else {
@@ -303,7 +303,7 @@ func (f *Filters) Handle(words []string, text string, taskConfig *config.TaskCon
 				access = false
 				break
 			}
-			if !(*matcher)(words[condition.Index-1]) {
+			if !matcher(words[condition.Index-1]) {
 				access = false
 				break
 			}
