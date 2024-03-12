@@ -36,14 +36,14 @@ import (
 
 // ConditionConfig : 用于条件表达式，目前支持=、!=、eq、neq、include、exclude、regex、nregex
 type ConditionConfig struct {
-	Index  int    `config:"index"`
-	Key    string `config:"key"`
-	Op     string `config:"op"`
-	mather MatchFunc
+	Index   int    `config:"index"`
+	Key     string `config:"key"`
+	Op      string `config:"op"`
+	matcher MatchFunc
 }
 
 func (c *ConditionConfig) GetMatcher() MatchFunc {
-	return c.mather
+	return c.matcher
 }
 
 // FilterConfig line filter config
@@ -149,13 +149,13 @@ func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
 				condition.Key = strings.TrimSpace(condition.Key)
 
 				// 初始化条件匹配方法 Matcher
-				mather, err := getOperationFunc(condition.Op, condition.Key)
+				matcher, err := getOperationFunc(condition.Op, condition.Key)
 
 				if err != nil {
-					return nil, fmt.Errorf("condition [%+v] init mather error: %s", condition, err.Error())
+					return nil, fmt.Errorf("condition [%+v] init matcher error: %s", condition, err.Error())
 				}
 
-				condition.mather = mather
+				condition.matcher = matcher
 
 				// 重新赋值 condition
 				f.Conditions[i] = condition
