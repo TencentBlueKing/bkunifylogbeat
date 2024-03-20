@@ -34,11 +34,16 @@ import (
 	"strings"
 )
 
-// ConditionConfig : 用于条件表达式，目前支持=、!=
+// ConditionConfig : 用于条件表达式，目前支持=、!=、eq、neq、include、exclude、regex、nregex
 type ConditionConfig struct {
-	Index int    `config:"index"`
-	Key   string `config:"key"`
-	Op    string `config:"op"`
+	Index   int    `config:"index"`
+	Key     string `config:"key"`
+	Op      string `config:"op"`
+	matcher MatchFunc
+}
+
+func (c *ConditionConfig) GetMatcher() MatchFunc {
+	return c.matcher
 }
 
 // FilterConfig line filter config
@@ -132,12 +137,28 @@ func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
 	config.HasFilter = false
 	if len(config.Delimiter) == 1 {
 		for _, f := range config.Filters {
-			// op must be "=" or "!="
-			for _, condition := range f.Conditions {
-				if condition.Op != "=" && condition.Op != "!=" {
-					return nil, fmt.Errorf("op must = or !=")
+			// op must be "=" or "!=" or "include" or "exclude" or "eq" or "neq" or "regex" or "nregex"
+			for i, condition := range f.Conditions {
+
+				// 兼容旧数据 历史数据的字符串匹配包含 op 固定为 '='
+				if condition.Index <= 0 && condition.Op == opEqual {
+					condition.Op = opInclude
 				}
+
+				// 去除字符串首尾空白字符
 				condition.Key = strings.TrimSpace(condition.Key)
+
+				// 初始化条件匹配方法 Matcher
+				matcher, err := getOperationFunc(condition.Op, condition.Key)
+
+				if err != nil {
+					return nil, fmt.Errorf("condition [%+v] init matcher error: %s", condition, err.Error())
+				}
+
+				condition.matcher = matcher
+
+				// 重新赋值 condition
+				f.Conditions[i] = condition
 			}
 			config.HasFilter = true
 		}

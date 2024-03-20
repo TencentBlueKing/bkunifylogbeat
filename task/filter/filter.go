@@ -282,25 +282,30 @@ func (f *Filters) Handle(words []string, text string, taskConfig *config.TaskCon
 	for _, filterConfig := range taskConfig.Filters {
 		access := true
 		for _, condition := range filterConfig.Conditions {
-			// 匹配第n列，如果n小于等于0，则变更为整个字符串包含
+			matcher := condition.GetMatcher()
+			if matcher == nil {
+				access = false
+				break
+			}
+
+			// 匹配第n列，如果n小于等于0，则变更为整个字符串匹配操作
 			if condition.Index <= 0 {
-				if !strings.Contains(text, condition.Key) {
+				if !matcher(text) {
 					access = false
 					break
 				} else {
 					continue
 				}
 			}
-			operationFunc := getOperation(condition.Op)
-			if operationFunc != nil {
-				if len(words) < condition.Index {
-					access = false
-					break
-				}
-				if !operationFunc(words[condition.Index-1], condition.Key) {
-					access = false
-					break
-				}
+
+			// 分隔符过滤
+			if len(words) < condition.Index {
+				access = false
+				break
+			}
+			if !matcher(words[condition.Index-1]) {
+				access = false
+				break
 			}
 		}
 		if access {
