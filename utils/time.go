@@ -25,7 +25,7 @@ package utils
 import (
 	"time"
 
-	bkcommon "github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/common"
+	bkcommon "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/common"
 )
 
 //GetDateTime: 获取系统当前时间

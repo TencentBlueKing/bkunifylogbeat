@@ -20,33 +20,32 @@
 // WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 // SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package task
+//go:build jsonsonic
 
-func equal(a, b string) bool {
-	return a == b
-}
+package json
 
-func notEqual(a, b string) bool {
-	return a != b
-}
-
-// sequence same with config define
-var operation = []func(a, b string) bool{
-	equal,
-	notEqual,
-}
-
-const (
-	EqualOperation = iota
-	NotEqualOperation
+import (
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/output/gse"
+	"github.com/bytedance/sonic"
+	"github.com/elastic/beats/libbeat/beat"
+	"github.com/elastic/beats/libbeat/common"
+	"github.com/elastic/beats/libbeat/outputs/codec"
 )
 
-func getOperation(op string) func(a, b string) bool {
-	if op == "=" {
-		return equal
-	} else if op == "!=" {
-		return notEqual
-	} else {
-		return nil
-	}
+type SonicEncoder struct{}
+
+// NewSonicEncoder creates a new json Encoder.
+func NewSonicEncoder() *SonicEncoder {
+	return &SonicEncoder{}
+}
+
+func (e *SonicEncoder) Encode(index string, event *beat.Event) ([]byte, error) {
+	return sonic.Marshal(event.Fields)
+}
+
+func init() {
+	codec.RegisterType("sonic", func(info beat.Info, cfg *common.Config) (codec.Codec, error) {
+		return NewSonicEncoder(), nil
+	})
+	gse.MarshalFunc = sonic.Marshal
 }

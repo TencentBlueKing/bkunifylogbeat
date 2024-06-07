@@ -15,6 +15,11 @@ RELEASE_GOARCH = amd64 386
 build: init
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-X main.version=${VERSION}" -o bin/${BEAT_NAME}
 
+.PHONY: build-sonic .EXPORT_ALL_VARIABLES
+build-sonic: init
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-X main.version=${VERSION}" -tags jsonsonic -o bin/${BEAT_NAME}
+
+
 .PHONY: init
 init:
 	@  echo ${BEAT_NAME}-${VERSION} "building..."

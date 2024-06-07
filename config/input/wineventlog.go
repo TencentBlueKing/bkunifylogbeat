@@ -24,7 +24,7 @@ package input
 
 import (
 	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/elastic/beats/libbeat/common"
 	"time"
 )

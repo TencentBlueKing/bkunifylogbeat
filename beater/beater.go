@@ -27,14 +27,18 @@
 package beater
 
 import (
+	"context"
 	"fmt"
+	"time"
 
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/output/gse"
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/utils/host"
 	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
 	// 加载 Filebeat Input插件及配置优化模块
 	_ "github.com/TencentBlueKing/bkunifylogbeat/include"
 	"github.com/TencentBlueKing/bkunifylogbeat/registrar"
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
 	"github.com/pkg/errors"
 )
 
@@ -46,28 +50,46 @@ type LogBeat struct {
 	done    chan struct{}
 	manager *Manager
 	config  cfg.Config
+
+	hostIDWatcher host.Watcher
+
+	isReload bool
 }
 
 // New create cadvisor beat
 func New(rawConfig *beat.Config) (*LogBeat, error) {
-	config, err := cfg.Parse(rawConfig)
+	var bt = &LogBeat{
+		done:     make(chan struct{}),
+		isReload: false,
+	}
+
+	err := bt.ParseConfig(rawConfig)
 	if err != nil {
 		return nil, errors.Wrap(err, "error reading configuration file")
 	}
 
-	logp.L.Infof("config: %+v", config)
-
-	var bt = &LogBeat{
-		done:   make(chan struct{}),
-		config: config,
-	}
-	mgr, err := NewManager(config, bt.done)
+	mgr, err := NewManager(bt.config, bt.done)
 	if nil != err {
 		logp.L.Errorf("can not create manager object , %v", err)
 		return nil, err
 	}
 	bt.manager = mgr
 	return bt, nil
+}
+
+func (bt *LogBeat) ParseConfig(rawConfig *beat.Config) error {
+	config, err := cfg.Parse(rawConfig)
+	if err != nil {
+		return errors.Wrap(err, "error reading configuration file")
+	}
+	logp.L.Infof("config: %+v", config)
+	bt.config = config
+
+	err = bt.initHostIDWatcher()
+	if err != nil {
+		return fmt.Errorf("init hostid failed, error:%s", err)
+	}
+	return nil
 }
 
 // PublishEvent ISender interface
@@ -95,14 +117,21 @@ func (bt *LogBeat) Run() error {
 		logp.L.Error("failed to start manager ")
 	}
 
+	reloadTicker := time.NewTicker(10 * time.Second)
+	defer reloadTicker.Stop()
 	for {
 		select {
 		// 处理采集器框架发送的重加载配置信号
-		case <-beat.ReloadChan:
-			config := beat.GetConfig()
-			if config != nil {
-				bt.Reload(config)
+		case <-reloadTicker.C:
+			if bt.isReload {
+				bt.isReload = false
+				config := beat.GetConfig()
+				if config != nil {
+					bt.Reload(config)
+				}
 			}
+		case <-beat.ReloadChan:
+			bt.isReload = true
 		// 处理采集器框架发送的结束采集器的信号（常由SIGINT引起），关闭采集器
 		case <-beat.Done:
 			bt.Stop()
@@ -127,10 +156,42 @@ func (bt *LogBeat) Close() error {
 // Reload beater interface
 func (bt *LogBeat) Reload(c *beat.Config) {
 	logp.L.Infof("reload with: %v", c)
-	config, err := cfg.Parse(c)
+	err := bt.ParseConfig(c)
 	if err != nil {
 		logp.L.Errorf("parse config error, %v", err)
 	}
 
-	bt.manager.Reload(config)
+	bt.manager.Reload(bt.config)
+}
+
+// initHostIDWatcher 监听cmdb下发host id文件
+func (bt *LogBeat) initHostIDWatcher() error {
+	var err error
+	if bt.hostIDWatcher != nil {
+		err = bt.hostIDWatcher.Reload(context.Background(), bt.config.HostIDPath, bt.config.CmdbLevelMaxLength, bt.config.MustHostIDExist)
+		if err != nil {
+			logp.L.Warnf("reload watch host id failed,error:%s", err.Error())
+			// 不影响其他位置的reload
+			return nil
+		}
+		return nil
+	}
+
+	// 将watcher初始化并启动
+	hostConfig := host.Config{
+		HostIDPath:         bt.config.HostIDPath,
+		CMDBLevelMaxLength: bt.config.CmdbLevelMaxLength,
+		IgnoreCmdbLevel:    bt.config.IgnoreCmdbLevel,
+		MustHostIDExist:    bt.config.MustHostIDExist,
+	}
+	bt.hostIDWatcher = host.NewWatcher(context.Background(), hostConfig)
+	err = bt.hostIDWatcher.Start()
+	if err != nil {
+		logp.L.Warnf("start watch host id failed,filepath:%s,cmdb max length:%d,error:%s", bt.config.HostIDPath, bt.config.CmdbLevelMaxLength, err)
+		return err
+	}
+	gse.RegisterHostWatcher(bt.hostIDWatcher)
+	logp.L.Infof("register hostid to gse success.")
+
+	return nil
 }

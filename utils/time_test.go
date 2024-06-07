@@ -26,7 +26,7 @@ import (
 	"testing"
 	"time"
 
-	bkcommon "github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/common"
+	bkcommon "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/common"
 	"github.com/stretchr/testify/assert"
 )
 

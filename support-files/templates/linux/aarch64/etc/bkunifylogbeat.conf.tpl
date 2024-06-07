@@ -25,7 +25,7 @@ local: {% for item in local %}
       multiline.negate: true
       multiline.match: after
       {% endif %}
-      {% if item.ext_meta is defined %}ext_meta: {{ item.get('ext_meta') }}{% endif %}
+
       scan_frequency: '{{ item.get('scan_frequency', 10) | int }}s'
       close_inactive: '{{ item.get('close_inactive', 120) | int }}s'
       clean_removed: '{{ item.get('clean_removed',  'true') | lower }}'
@@ -33,5 +33,22 @@ local: {% for item in local %}
       {% if item.ignore_older is defined %}ignore_older: '{{ item['ignore_older'] | int }}s'{% endif %}
       {% if item.clean_inactive is defined %}clean_inactive: '{{ item['clean_inactive'] | int }}s'{% endif %}
       {% if item.max_bytes is defined %}max_bytes: {{ item['max_bytes'] | int }}{% endif %}
+
+      {% if item.ext_meta is defined or item.labels is defined %}ext_meta:
+      {%- if item.ext_meta is defined %}
+      {%- for key, value in item.ext_meta.items() %}
+        {{ key }}: "{{ value }}"
+      {%- endfor %}
+      {%- endif %}
+      {%- if item.labels is defined %}
+      {%- for label in item.labels %}
+      {%- for key, value in label.items() %}
+        {{ key }}: "{{ value }}"
+      {%- endfor %}
+      {%- endfor %}
+      {%- endif %}
+      {%- endif %}
+
+      {% if item.output is defined and item.output %}{{ item.output.type }}: {{ item.output.params }}{% endif %}
 
 {% endfor %}{% endif %}

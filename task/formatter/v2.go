@@ -25,27 +25,23 @@
 package formatter
 
 import (
-	"encoding/json"
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
-	"github.com/TencentBlueKing/bkunifylogbeat/task"
 	"github.com/TencentBlueKing/bkunifylogbeat/utils"
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
 	"github.com/elastic/beats/filebeat/util"
-	"github.com/elastic/beats/libbeat/logp"
 	"strings"
 )
-
-type ContainerStdoutFields struct {
-	Log    string `json:"log"`
-	Stream string `json:"stream"`
-	Time   string `json:"time"`
-}
 
 type v2Formatter struct {
 	taskConfig *config.TaskConfig
 }
 
-//NewV2Formatter: bkunifylogbeat日志采集输出格式
+type LineItem struct {
+	Data           string `json:"data"`
+	IterationIndex int    `json:"iterationindex"`
+}
+
+// NewV2Formatter : bkunifylogbeat日志采集输出格式
 func NewV2Formatter(config *config.TaskConfig) (*v2Formatter, error) {
 	f := &v2Formatter{
 		taskConfig: config,
@@ -53,7 +49,7 @@ func NewV2Formatter(config *config.TaskConfig) (*v2Formatter, error) {
 	return f, nil
 }
 
-//Format: 最新格式兼容
+// Format : 最新格式兼容
 func (f v2Formatter) Format(events []*util.Data) beat.MapStr {
 	var (
 		datetime, utcTime string
@@ -76,34 +72,42 @@ func (f v2Formatter) Format(events []*util.Data) beat.MapStr {
 
 	hasEvent := false
 
-	var items []beat.MapStr
-	for index, event := range events {
-		item := event.Event.Fields
-		if item == nil {
-			continue
+	if events[0].Event.HasTexts() {
+		itemsCount := 0
+		for _, event := range events {
+			itemsCount += event.Event.Count()
 		}
-		hasEvent = true
-		item["iterationindex"] = index
-		if f.taskConfig.IsContainerStd {
-			content, ok := item["data"].(string)
-			if ok {
-				jsonContent := ContainerStdoutFields{}
-				e := json.Unmarshal([]byte(content), &jsonContent)
-				if e != nil {
-					logp.Err("output format error, container stdout no json format, data(%s)", content)
+		items := make([]LineItem, 0, itemsCount)
+		index := 0
+		for _, event := range events {
+			for _, text := range event.Event.Texts {
+				if text == "" {
+					continue
 				}
-				item["data"] = jsonContent.Log
-				item["stream"] = jsonContent.Stream
-				item["log_time"] = jsonContent.Time
+				items = append(items, LineItem{Data: text, IterationIndex: index})
+				index += 1
 			}
 		}
-		items = append(items, item)
+		data["items"] = items
+		hasEvent = len(items) > 0
+	} else {
+		var items []beat.MapStr
+		for index, event := range events {
+			item := event.Event.Fields.Clone()
+			if item == nil {
+				continue
+			}
+			item["iterationindex"] = index
+			items = append(items, item)
+		}
+		data["items"] = items
+		hasEvent = len(items) > 0
 	}
+
 	// 仅需要更新采集状态的事件数
 	if !hasEvent {
 		return nil
 	}
-	data["items"] = items
 
 	//发送正常事件
 	if f.taskConfig.ExtMeta != nil {
@@ -116,7 +120,7 @@ func (f v2Formatter) Format(events []*util.Data) beat.MapStr {
 
 func init() {
 	for _, name := range []string{"v2", "default"} {
-		err := task.FormatterRegister(name, func(config *config.TaskConfig) (task.Formatter, error) {
+		err := FormatterRegister(name, func(config *config.TaskConfig) (Formatter, error) {
 			return NewV2Formatter(config)
 		})
 		if err != nil {

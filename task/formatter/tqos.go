@@ -30,15 +30,14 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
-	"github.com/TencentBlueKing/bkunifylogbeat/task"
 	"github.com/TencentBlueKing/bkunifylogbeat/utils"
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
 	"github.com/elastic/beats/filebeat/util"
 	"github.com/golang/groupcache/lru"
 )
 
-//如果未配置close_inactive则直接默认为5分钟
+// 如果未配置close_inactive则直接默认为5分钟
 type TQOSLogConfig struct {
 	HarvesterLimit int `config:"harvester_limit"`
 }
@@ -49,7 +48,7 @@ type TQOSFormatter struct {
 	cache *lru.Cache
 }
 
-//NewTQOSFormatter: 兼容TQOS输出格式
+// NewTQOSFormatter: 兼容TQOS输出格式
 func NewTQOSFormatter(config *config.TaskConfig) (*TQOSFormatter, error) {
 	//获取任务配置中最大的FD数量
 	logConfig := &TQOSLogConfig{
@@ -67,7 +66,7 @@ func NewTQOSFormatter(config *config.TaskConfig) (*TQOSFormatter, error) {
 	return f, nil
 }
 
-//Format: TQOS输出格式兼容
+// Format: TQOS输出格式兼容
 func (f TQOSFormatter) Format(events []*util.Data) beat.MapStr {
 	var (
 		datetime string
@@ -87,20 +86,18 @@ func (f TQOSFormatter) Format(events []*util.Data) beat.MapStr {
 		"dataid":    f.taskConfig.DataID,
 	}
 
-	hasEvent := false
-
 	var texts []string
 	for _, event := range events {
-		item := event.Event.Fields
-		if item == nil {
-			continue
+		for _, text := range event.Event.GetTexts() {
+			if text == "" {
+				continue
+			}
+			texts = append(texts, text)
 		}
-		hasEvent = true
-		texts = append(texts, item["data"].(string))
 	}
 
 	// 仅需要更新采集状态的事件数
-	if !hasEvent {
+	if len(texts) == 0 {
 		return nil
 	}
 	data["value"] = texts
@@ -147,7 +144,7 @@ func (f TQOSFormatter) getWorldID(path string) int64 {
 }
 
 func init() {
-	err := task.FormatterRegister("tqos", func(config *config.TaskConfig) (task.Formatter, error) {
+	err := FormatterRegister("tqos", func(config *config.TaskConfig) (Formatter, error) {
 		return NewTQOSFormatter(config)
 	})
 	if err != nil {

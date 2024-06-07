@@ -1,7 +1,14 @@
 logging.level: error
 max_procs: 1
-output.bkpipe:
+output.bkpipe_multi:
   endpoint: {{ plugin_path.endpoint }}
+{%- if nodeman is defined %}
+  hostip: {{ nodeman.host.inner_ip }}
+{% else %}
+  hostip: {{ cmdb_instance.host.bk_host_innerip }}
+{%- endif %}
+  cloudid: {{ cmdb_instance.host.bk_cloud_id[0].id if cmdb_instance.host.bk_cloud_id is iterable and cmdb_instance.host.bk_cloud_id is not string else cmdb_instance.host.bk_cloud_id }}
+
 path.logs: {{ plugin_path.log_path }}
 path.data: {{ plugin_path.data_path }}
 path.pid: {{ plugin_path.pid_path }}
@@ -28,6 +35,8 @@ processors:
           has_fields: ["dataid"]
 
 bkunifylogbeat.eventdataid: -1
+bkunifylogbeat.registry.flush: "10s"
+bkunifylogbeat.host_id_path: {{ plugin_path.host_id }}
 bkunifylogbeat.multi_config:
   - path: {{ plugin_path.subconfig_path }}
     file_pattern: "*.conf"

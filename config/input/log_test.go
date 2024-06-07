@@ -26,7 +26,7 @@ import (
 	"testing"
 
 	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/logp"
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	"github.com/elastic/beats/libbeat/common"
 	libbeatlogp "github.com/elastic/beats/libbeat/logp"
 	"github.com/stretchr/testify/assert"

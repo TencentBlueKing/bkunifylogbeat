@@ -23,12 +23,15 @@
 package tests
 
 import (
-	"github.com/TencentBlueKing/collector-go-sdk/v2/bkbeat/beat"
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
+	bkmonitoring "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/monitoring"
+	"github.com/TencentBlueKing/bkunifylogbeat/config"
+	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
 	"github.com/elastic/beats/filebeat/input/file"
 	"github.com/elastic/beats/filebeat/util"
 )
 
-//MockLogEvent: 生成日志采集事件
+// MockLogEvent : 生成日志采集事件
 func MockLogEvent(source string, content string) *util.Data {
 	data := &util.Data{
 		Event: beat.Event{
@@ -45,4 +48,33 @@ func MockLogEvent(source string, content string) *util.Data {
 		Offset: 1,
 	})
 	return data
+}
+
+// MockTaskNode : 生成TaskNode
+func MockTaskNode(config *config.TaskConfig) *base.TaskNode {
+	return &base.TaskNode{
+		Node: &base.Node{
+			ID: config.ID,
+
+			In:   make(chan interface{}),
+			Outs: make(map[string]chan interface{}),
+
+			End: make(chan struct{}),
+
+			GameOver: make(chan struct{}),
+
+			TaskNodeList: map[string]map[string]*base.TaskNode{},
+		},
+
+		// Crawler metrics
+		CrawlerReceived:  bkmonitoring.NewIntWithDataID(config.DataID, "crawler_received"),
+		CrawlerState:     bkmonitoring.NewIntWithDataID(config.DataID, "crawler_state"),
+		CrawlerSendTotal: bkmonitoring.NewIntWithDataID(config.DataID, "crawler_send_total"),
+		CrawlerDropped:   bkmonitoring.NewIntWithDataID(config.DataID, "crawler_dropped"),
+
+		// sender metrics
+		SenderReceive:   bkmonitoring.NewIntWithDataID(config.DataID, "sender_received"),
+		SenderState:     bkmonitoring.NewIntWithDataID(config.DataID, "sender_state"),
+		SenderSendTotal: bkmonitoring.NewIntWithDataID(config.DataID, "sender_send_total"),
+	}
 }
