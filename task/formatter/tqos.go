@@ -37,18 +37,19 @@ import (
 	"github.com/golang/groupcache/lru"
 )
 
-// 如果未配置close_inactive则直接默认为5分钟
+// TQOSLogConfig 如果未配置close_inactive则直接默认为5分钟
 type TQOSLogConfig struct {
 	HarvesterLimit int `config:"harvester_limit"`
 }
 
+// TQOSFormatter 兼容QOS输出格式
 type TQOSFormatter struct {
 	taskConfig *config.TaskConfig
 	// cache 用于存储TQOS对日志路径的解析结果
 	cache *lru.Cache
 }
 
-// NewTQOSFormatter: 兼容TQOS输出格式
+// NewTQOSFormatter 新兼容TQOS输出格式
 func NewTQOSFormatter(config *config.TaskConfig) (*TQOSFormatter, error) {
 	//获取任务配置中最大的FD数量
 	logConfig := &TQOSLogConfig{

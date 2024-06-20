@@ -37,7 +37,7 @@ import (
 	"github.com/golang/groupcache/lru"
 )
 
-// 如果未配置close_inactive则直接默认为5分钟
+// LogConfig 如果未配置close_inactive则直接默认为5分钟
 type LogConfig struct {
 	HarvesterLimit int `config:"harvester_limit"`
 }

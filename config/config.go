@@ -66,7 +66,7 @@ type Registry struct {
 	GcFrequency  time.Duration `config:"gc_frequency"`
 }
 
-//默认配置
+// Factory 默认配置
 type Factory = func(rawConfig *beat.Config) (*beat.Config, error)
 
 var registry = make(map[string]Factory)

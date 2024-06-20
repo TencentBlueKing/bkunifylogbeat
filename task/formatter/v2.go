@@ -41,7 +41,7 @@ type LineItem struct {
 	IterationIndex int    `json:"iterationindex"`
 }
 
-// NewV2Formatter : bkunifylogbeat日志采集输出格式
+// NewV2Formatter bkunifylogbeat日志采集输出格式
 func NewV2Formatter(config *config.TaskConfig) (*v2Formatter, error) {
 	f := &v2Formatter{
 		taskConfig: config,

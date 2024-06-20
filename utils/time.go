@@ -28,7 +28,7 @@ import (
 	bkcommon "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/common"
 )
 
-//GetDateTime: 获取系统当前时间
+// GetDateTime 获取系统当前时间
 func GetDateTime() (localTime string, utcTime string, unixTime int64) {
 	localTime = time.Now().Format(bkcommon.TimeFormat)
 	utcTime = time.Now().UTC().Format(bkcommon.TimeFormat)
