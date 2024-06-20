@@ -54,7 +54,7 @@ var (
 	registrarFiles        = bkmonitoring.NewInt("registrar_files", monitoring.Gauge)
 )
 
-// Registrar: 采集进度管理
+// Registrar 采集进度管理
 type Registrar struct {
 	Channel chan []file.State
 	done    chan struct{}
@@ -85,7 +85,7 @@ func New(config cfg.Registry) (*Registrar, error) {
 	return r, r.Init()
 }
 
-// Init: 采集器启动时调用，同时对原采集器采集进度迁移
+// Init 采集器启动时调用，同时对原采集器采集进度迁移
 func (r *Registrar) Init() error {
 	var states []file.State
 

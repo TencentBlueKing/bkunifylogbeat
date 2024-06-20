@@ -48,7 +48,7 @@ type unifytlogcFormatter struct {
 	cache *lru.Cache
 }
 
-// NewUnifytlogcFormatter: 兼容unifytlogc输出格式
+// NewUnifytlogcFormatter 兼容unifytlogc输出格式
 func NewUnifytlogcFormatter(config *config.TaskConfig) (*unifytlogcFormatter, error) {
 	//获取任务配置中最大的FD数量
 	logConfig := &LogConfig{
@@ -66,7 +66,7 @@ func NewUnifytlogcFormatter(config *config.TaskConfig) (*unifytlogcFormatter, er
 	return f, nil
 }
 
-// Format: unifytlogc输出格式兼容
+// Format unifytlogc输出格式兼容
 func (f unifytlogcFormatter) Format(events []*util.Data) beat.MapStr {
 	var (
 		datetime, utcTime string

@@ -124,7 +124,7 @@ func NewInput(
 	return in, nil
 }
 
-// RemoveInput : 移除全局缓存
+// RemoveInput  移除全局缓存
 func RemoveInput(id string) {
 	logp.L.Infof("remove input(%s) in global inputMaps", id)
 	mtx.Lock()
@@ -209,7 +209,7 @@ func (in *Input) Run() {
 	}
 }
 
-// stop : 停止runner
+// stop  停止runner
 // 停用的场景:
 //  1. 当outs为空后，自动退出
 //  2. 当End的channel被主动关闭后
@@ -219,7 +219,7 @@ func (in *Input) stop() {
 	})
 }
 
-// Reload : Input不做reload处理，配置如果有变化，直接删除新建
+// Reload  Input不做reload处理，配置如果有变化，直接删除新建
 func (in *Input) Reload() {
 	return
 }

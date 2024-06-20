@@ -59,7 +59,7 @@ func newFilter(taskFilterConfig map[string]interface{}) *Filters {
 	return filter
 }
 
-// TestFilter: 测试原过滤器兼容
+// TestFilter 测试原过滤器兼容
 func TestNewFilters(t *testing.T) {
 	event = beat.Event{}
 	filter := newFilter(map[string]interface{}{

@@ -107,7 +107,7 @@ func NewFilters(taskCfg *config.TaskConfig, taskNode *base.TaskNode) (*Filters, 
 	return fil, nil
 }
 
-// RemoveFilter : 移除全局缓存
+// RemoveFilter  移除全局缓存
 func RemoveFilter(id string) {
 	logp.L.Infof("remove filter(%s) in global filterMaps", id)
 	mtx.Lock()

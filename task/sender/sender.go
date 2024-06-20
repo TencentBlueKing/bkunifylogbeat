@@ -50,7 +50,7 @@ var (
 	senderHandledTotal = bkmonitoring.NewInt("send_handled_total")
 )
 
-// Sender : 对采集事件进行打包, 并调用beat发送事件
+// Sender  对采集事件进行打包, 并调用beat发送事件
 type Sender struct {
 	*base.Node
 
@@ -115,7 +115,7 @@ func NewSender(taskCfg *config.TaskConfig, taskNode *base.TaskNode) (*Sender, er
 	return send, nil
 }
 
-// RemoveSender : 移除全局缓存
+// RemoveSender  移除全局缓存
 func RemoveSender(id string) {
 	logp.L.Infof("remove sender(%s) in global senderMaps", id)
 	mtx.Lock()
@@ -244,7 +244,7 @@ func (send *Sender) cacheSend(event *util.Data) error {
 	return nil
 }
 
-// send: 调用beat.SendEvent发送打包后的采集事件
+// send 调用beat.SendEvent发送打包后的采集事件
 func (send *Sender) send(events []*util.Data) {
 	var packageEvent beat.Event
 	if len(events) == 0 {

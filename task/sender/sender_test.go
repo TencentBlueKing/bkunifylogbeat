@@ -58,7 +58,7 @@ type mockFormatter struct {
 	taskConfig *config.TaskConfig
 }
 
-// NewMockFormatter: mock formatter
+// NewMockFormatter mock formatter
 func NewMockFormatter(config *config.TaskConfig) (*mockFormatter, error) {
 	f := &mockFormatter{
 		taskConfig: config,

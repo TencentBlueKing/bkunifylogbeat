@@ -49,7 +49,7 @@ func NewV2Formatter(config *config.TaskConfig) (*v2Formatter, error) {
 	return f, nil
 }
 
-// Format : 最新格式兼容
+// Format  最新格式兼容
 func (f v2Formatter) Format(events []*util.Data) beat.MapStr {
 	var (
 		datetime, utcTime string

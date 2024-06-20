@@ -34,7 +34,7 @@ import (
 	"strings"
 )
 
-// ConditionConfig : 用于条件表达式，目前支持=、!=、eq、neq、include、exclude、regex、nregex
+// ConditionConfig  用于条件表达式，目前支持=、!=、eq、neq、include、exclude、regex、nregex
 type ConditionConfig struct {
 	Index   int    `config:"index"`
 	Key     string `config:"key"`
@@ -280,7 +280,7 @@ func GetTasks(config Config) map[string]*TaskConfig {
 	return tasks
 }
 
-// initTaskConfig: 任务配置初始化
+// initTaskConfig 任务配置初始化
 func initTaskConfig(inputType string, rawConfig *beat.Config) (*beat.Config, error) {
 	f, exist := registry[inputType]
 	if !exist {

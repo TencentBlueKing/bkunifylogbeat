@@ -67,7 +67,7 @@ func NewTQOSFormatter(config *config.TaskConfig) (*TQOSFormatter, error) {
 	return f, nil
 }
 
-// Format: TQOS输出格式兼容
+// Format TQOS输出格式兼容
 func (f TQOSFormatter) Format(events []*util.Data) beat.MapStr {
 	var (
 		datetime string

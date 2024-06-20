@@ -50,7 +50,7 @@ func MockLogEvent(source string, content string) *util.Data {
 	return data
 }
 
-// MockTaskNode : 生成TaskNode
+// MockTaskNode  生成TaskNode
 func MockTaskNode(config *config.TaskConfig) *base.TaskNode {
 	return &base.TaskNode{
 		Node: &base.Node{

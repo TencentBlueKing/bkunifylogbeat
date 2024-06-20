@@ -71,7 +71,7 @@ func NewCPULimit(l, checkTimes int) *CPULimit {
 	return cpuLimit
 }
 
-// Start : start cpu limit
+// Start  start cpu limit
 func (c *CPULimit) Start() {
 	logp.L.Info("start cpu limit.")
 
@@ -143,7 +143,7 @@ func (c *CPULimit) Start() {
 	}()
 }
 
-// Stop : stop cpu limit
+// Stop  stop cpu limit
 func (c *CPULimit) Stop() {
 	c.closeOnce.Do(func() {
 		close(c.done)
@@ -151,17 +151,17 @@ func (c *CPULimit) Stop() {
 	logp.L.Info("stop cpu limit.")
 }
 
-// Allow : judge current
+// Allow  judge current
 func (c *CPULimit) Allow() bool {
 	return c.isAllowRun
 }
 
-// GetCheckInterval : get cpu check interval
+// GetCheckInterval  get cpu check interval
 func (c *CPULimit) GetCheckInterval() time.Duration {
 	return c.checkInterval
 }
 
-// SetResourceLimit : 在一定程度上限制CPU使用
+// SetResourceLimit  在一定程度上限制CPU使用
 // maxCpuLimit: 最大CPU使用率限制
 // checkTimes: 资源限制的检查次数
 func SetResourceLimit(maxCpuLimit, checkTimes int) {
