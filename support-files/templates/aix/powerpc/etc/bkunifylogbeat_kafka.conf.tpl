@@ -22,7 +22,7 @@ local: {% for item in local %}
          op: '{{ condition.op }}'{% endfor %}
       {% endfor %}{% endif %}
 
-      initial_offset: '{{ item.get('initial_offset', 'oldest') }}'
+      initial_offset: '{{ item.get('initial_offset', 'newest') }}'
 
 
       {% if item.ext_meta is defined or item.labels is defined %}ext_meta:
