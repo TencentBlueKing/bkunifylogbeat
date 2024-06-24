@@ -51,65 +51,18 @@ func busyCpu(limit *CPULimit, done chan struct{}) {
 		}
 	}
 }
-
-func TestNewCPULimit_SingleCore_SingleTask(t *testing.T) {
+func testCPULimit(t *testing.T, taskNum int, coreNum int) {
 	logp.SetLogger(libbeatlogp.L())
 	var (
-		limit        = 50 // CPU使用率限制
-		checkTimes   = 10 // CPU检测频率（1秒内）
-		toleranceVal = 10 // 容忍值，允许在限制范围内，正负一定的容忍值
-
-		done = make(chan struct{}, 1)
+		limit        = 50           // CPU使用率限制
+		checkTimes   = 10           // CPU检测频率（1秒内）
+		toleranceVal = 10 * coreNum // 容忍值，允许在限制范围内，正负一定的容忍值
+		done         = make(chan struct{}, 1)
 	)
 
-	// SingleCore
-	runtime.GOMAXPROCS(1)
-	p, err := process.NewProcess(int32(os.Getpid()))
-	if err != nil {
-		fmt.Printf("cpu limit, get process error=>(%v)", err)
-		return
-	}
+	// 设置GOMAXPROCS
+	runtime.GOMAXPROCS(coreNum)
 
-	l := NewCPULimit(limit, checkTimes)
-	defer l.Stop()
-
-	// SingleTask
-	go busyCpu(l, done)
-
-	count, testTimes := 0, 10
-	tick := time.NewTicker(time.Second)
-	defer tick.Stop()
-
-L:
-	for {
-		select {
-		case <-tick.C:
-			usage, _ := p.Percent(0)
-			fmt.Printf("current cpu usage is (%.2f%%)\n", usage)
-			if usage > float64(limit+toleranceVal) {
-				t.Errorf("cpu limit check false, usage(%.2f), expect limit(%d)", usage, limit)
-			}
-
-			count++
-			if count >= testTimes {
-				break L
-			}
-		}
-	}
-	close(done)
-}
-
-func TestNewCPULimit_SingleCore_MultiTask(t *testing.T) {
-	logp.SetLogger(libbeatlogp.L())
-	var (
-		limit        = 50 // CPU使用率限制
-		checkTimes   = 10 // CPU检测频率（1秒内）
-		toleranceVal = 10 // 容忍值，允许在限制范围内，正负一定的容忍值
-
-		done = make(chan struct{}, 1)
-	)
-	// SingleCore
-	runtime.GOMAXPROCS(1)
 	p, err := process.NewProcess(int32(os.Getpid()))
 	if err != nil {
 		fmt.Printf("cpu limit, get process error=>(%v)", err)
@@ -121,8 +74,8 @@ func TestNewCPULimit_SingleCore_MultiTask(t *testing.T) {
 
 	_, _ = p.Percent(0)
 
-	// MultiTask
-	for i := 0; i < 10; i++ {
+	// Run tasks
+	for i := 0; i < taskNum; i++ {
 		go busyCpu(l, done)
 	}
 
@@ -147,106 +100,20 @@ L:
 		}
 	}
 	close(done)
+}
+
+func TestNewCPULimit_SingleCore_SingleTask(t *testing.T) {
+	testCPULimit(t, 1, 1)
 }
 
 func TestNewCPULimit_MultiCore_SingleTask(t *testing.T) {
-	logp.SetLogger(libbeatlogp.L())
-	var (
-		limit        = 50                    // CPU使用率限制
-		checkTimes   = 10                    // CPU检测频率（1秒内）
-		toleranceVal = 10 * runtime.NumCPU() // 容忍值，允许在限制范围内，正负一定的容忍值
+	testCPULimit(t, 1, runtime.NumCPU())
+}
 
-		done = make(chan struct{}, 1)
-	)
-
-	// SingleCore
-	//runtime.GOMAXPROCS(1)
-
-	p, err := process.NewProcess(int32(os.Getpid()))
-	if err != nil {
-		fmt.Printf("cpu limit, get process error=>(%v)", err)
-		return
-	}
-
-	l := NewCPULimit(limit, checkTimes)
-	defer l.Stop()
-
-	_, _ = p.Percent(0)
-
-	// SingleTask
-	go busyCpu(l, done)
-
-	count, testTimes := 0, 10
-	tick := time.NewTicker(time.Second)
-	defer tick.Stop()
-
-L:
-	for {
-		select {
-		case <-tick.C:
-			usage, _ := p.Percent(0)
-			fmt.Printf("current cpu usage is (%.2f%%)\n", usage)
-			if usage > float64(limit+toleranceVal) {
-				t.Errorf("cpu limit check false, usage(%.2f), expect limit(%d)", usage, limit)
-			}
-
-			count++
-			if count >= testTimes {
-				break L
-			}
-		}
-	}
-	close(done)
+func TestNewCPULimit_SingleCore_MultiTask(t *testing.T) {
+	testCPULimit(t, 10, 1)
 }
 
 func TestNewCPULimit_MultiCore_MultiTask(t *testing.T) {
-	logp.SetLogger(libbeatlogp.L())
-
-	var (
-		limit        = 50                    // CPU使用率限制
-		checkTimes   = 10                    // CPU检测频率（1秒内）
-		toleranceVal = 10 * runtime.NumCPU() // 容忍值，允许在限制范围内，正负一定的容忍值
-
-		done = make(chan struct{}, 1)
-	)
-	// SingleCore
-	//runtime.GOMAXPROCS(1)
-
-	p, err := process.NewProcess(int32(os.Getpid()))
-	if err != nil {
-		fmt.Printf("cpu limit, get process error=>(%v)", err)
-		return
-	}
-
-	l := NewCPULimit(limit, checkTimes)
-	defer l.Stop()
-
-	_, _ = p.Percent(0)
-
-	// MultiTask
-	for i := 0; i < 10; i++ {
-		go busyCpu(l, done)
-	}
-
-	count, testTimes := 0, 10
-	tick := time.NewTicker(time.Second)
-	defer tick.Stop()
-
-L:
-	for {
-		select {
-		case <-tick.C:
-			usage, _ := p.Percent(0)
-			fmt.Printf("current cpu usage is (%.2f%%)\n", usage)
-			if usage > float64(limit+toleranceVal) {
-				t.Errorf("cpu limit check false, usage(%.2f), expect limit(%d)", usage, limit)
-			}
-
-			count++
-			if count >= testTimes {
-				break L
-			}
-		}
-	}
-	close(done)
+	testCPULimit(t, 10, runtime.NumCPU())
 }

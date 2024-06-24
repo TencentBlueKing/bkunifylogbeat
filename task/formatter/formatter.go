@@ -24,6 +24,10 @@ package formatter
 
 import (
 	"fmt"
+	"github.com/golang/groupcache/lru"
+	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
@@ -63,4 +67,38 @@ func FormatterRegister(name string, factory FormatterFactory) error {
 
 	formatterRegistry[name] = factory
 	return nil
+}
+
+type FormatterWithCache interface {
+	GetCache() *lru.Cache // 请将CacheType替换为你的缓存类型
+}
+
+func getWorldIDFromPath(f FormatterWithCache, path string) int64 {
+	pathCache, ok := f.GetCache().Get(path)
+	if ok {
+		return pathCache.(int64)
+	}
+
+	// 如果filename所在目录是“xxx_数字”的形式，worldid就是这个数字，否则为-1
+	worldID := int64(-1)
+	dir, _ := filepath.Split(path)
+	baseName := filepath.Base(dir)
+
+	separator := "_"
+	strPos := strings.Index(baseName, separator)
+
+	if strPos <= 0 || strings.Count(baseName, separator) != 1 {
+		f.GetCache().Add(path, worldID)
+		return worldID
+	}
+
+	candidate := baseName[strPos+1:]
+	worldID, err := strconv.ParseInt(candidate, 10, 64)
+	if err != nil {
+		worldID = int64(-1)
+		f.GetCache().Add(path, worldID)
+		return worldID
+	}
+	f.GetCache().Add(path, worldID)
+	return worldID
 }

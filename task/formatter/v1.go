@@ -44,8 +44,15 @@ func NewV1Formatter(config *config.TaskConfig) (*v1Formatter, error) {
 	return f, nil
 }
 
-// Format bklogbeat输出格式兼容
-func (f v1Formatter) Format(events []*util.Data) beat.MapStr {
+type commonFormatter interface {
+	GetTaskConfig() *config.TaskConfig
+}
+
+func (f v1Formatter) GetTaskConfig() *config.TaskConfig {
+	return f.taskConfig
+}
+
+func prepareData(f commonFormatter, events []*util.Data) beat.MapStr {
 	var (
 		datetime, utcTime string
 		timestamp         int64
@@ -54,16 +61,23 @@ func (f v1Formatter) Format(events []*util.Data) beat.MapStr {
 
 	lastState := events[len(events)-1].GetState()
 	filename := lastState.Source
-	if len(f.taskConfig.RemovePathPrefix) > 0 {
-		filename = strings.TrimPrefix(filename, f.taskConfig.RemovePathPrefix)
+	if len(f.GetTaskConfig().RemovePathPrefix) > 0 {
+		filename = strings.TrimPrefix(filename, f.GetTaskConfig().RemovePathPrefix)
 	}
 	data := beat.MapStr{
-		"dataid":   f.taskConfig.DataID,
+		"dataid":   f.GetTaskConfig().DataID,
 		"filename": filename,
 		"datetime": datetime,
 		"utctime":  utcTime,
 		"time":     timestamp,
 	}
+
+	return data
+}
+
+// Format bklogbeat输出格式兼容
+func (f v1Formatter) Format(events []*util.Data) beat.MapStr {
+	data := prepareData(f, events)
 
 	var texts []string
 	for _, event := range events {
