@@ -8,7 +8,6 @@ require (
 	github.com/bytedance/sonic v1.10.0
 	github.com/dustin/go-humanize v1.0.0
 	github.com/elastic/beats v7.1.1+incompatible
-	github.com/fsnotify/fsnotify v1.5.4
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/pkg/errors v0.9.1
 	github.com/shirou/gopsutil v3.21.8+incompatible
@@ -101,5 +100,5 @@ replace (
 	github.com/Sirupsen/logrus v1.6.0 => github.com/sirupsen/logrus v1.6.0
 	github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse => ../bkmonitor-datalink/pkg/libgse
 	github.com/TencentBlueKing/bkmonitor-datalink/pkg/utils => ../bkmonitor-datalink/pkg/utils
-	github.com/elastic/beats v7.1.1+incompatible => github.com/TencentBlueking/beats v7.1.30-bk+incompatible
+	github.com/elastic/beats v7.1.1+incompatible => github.com/TencentBlueking/beats v7.1.31-bk+incompatible
 )
