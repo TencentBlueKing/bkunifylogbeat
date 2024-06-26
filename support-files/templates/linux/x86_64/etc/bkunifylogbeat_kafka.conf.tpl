@@ -14,6 +14,8 @@ local: {% for item in local %}
 
       group_id: '{% if item.group_id is defined and item.group_id %}{{ item.get('group_id') }}{% else %}bkunifylogbeat_{{ dataid | int }}{% endif %}'
 
+      initial_offset: '{{ item.get('initial_offset', 'newest') }}'
+
       delimiter: '{{ item.get('delimiter', '') }}'
       {% if item.filters is defined and item.filters %}filters:{% for filter in item.filters %}
        - conditions:{% for condition in filter.conditions %}
@@ -21,9 +23,6 @@ local: {% for item in local %}
          key: '{{ condition.key}}'
          op: '{{ condition.op }}'{% endfor %}
       {% endfor %}{% endif %}
-
-      initial_offset: '{{ item.get('initial_offset', 'newest') }}'
-
 
       {% if item.ext_meta is defined or item.labels is defined %}ext_meta:
       {%- if item.ext_meta is defined %}
