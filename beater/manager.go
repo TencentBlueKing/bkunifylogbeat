@@ -45,7 +45,7 @@ var (
 	taskError   = bkmonitoring.NewInt("manager_error")
 )
 
-// Manager : 任务管理
+// Manager 任务管理
 // 1. 读取采集任务
 // 2. 管理任务生命周期：创建、删除
 type Manager struct {
@@ -55,7 +55,7 @@ type Manager struct {
 	beatDone chan struct{}
 }
 
-// NewManager : create new manager
+// NewManager create new manager
 func NewManager(config cfg.Config, beatDone chan struct{}) (*Manager, error) {
 	m := &Manager{
 		config:   config,
@@ -66,7 +66,7 @@ func NewManager(config cfg.Config, beatDone chan struct{}) (*Manager, error) {
 	return m, nil
 }
 
-// Start : Run start and link modules
+// Start Run start and link modules
 func (m *Manager) Start() error {
 	var err error
 	logp.L.Info("start manager")
@@ -87,7 +87,7 @@ func (m *Manager) Start() error {
 	return nil
 }
 
-// Stop : Close manager when program quit
+// Stop Close manager when program quit
 func (m *Manager) Stop() error {
 	for _, t := range m.tasks {
 		t.Stop()
@@ -98,7 +98,7 @@ func (m *Manager) Stop() error {
 	return nil
 }
 
-// Reload : diff config, create, remove, update jobs
+// Reload diff config, create, remove, update jobs
 func (m *Manager) Reload(config cfg.Config) {
 	logp.L.Infof("[Reload]update config, current tasks=>%d", len(m.tasks))
 
@@ -180,7 +180,7 @@ func (m *Manager) Reload(config cfg.Config) {
 	m.config = config
 }
 
-// startTask : 启动任务，调用filebeat.runner开始进行日志采集
+// startTask 启动任务，调用filebeat.runner开始进行日志采集
 func (m *Manager) startTask(config *cfg.TaskConfig, lastStates []file.State) error {
 	if _, ok := m.tasks[config.ID]; ok {
 		return fmt.Errorf("task with same ID already exists: %s", config.ID)
@@ -200,7 +200,7 @@ func (m *Manager) startTask(config *cfg.TaskConfig, lastStates []file.State) err
 	return nil
 }
 
-// removeTask : 移除任务，停止filebeat.runner
+// removeTask 移除任务，停止filebeat.runner
 func (m *Manager) removeTask(taskID string) error {
 	var err error
 	if _, ok := m.tasks[taskID]; !ok {
@@ -217,7 +217,7 @@ func (m *Manager) removeTask(taskID string) error {
 	return nil
 }
 
-// reloadTask : 任务重载
+// reloadTask 任务重载
 func (m *Manager) reloadTask(taskID string) error {
 	var err error
 	if _, ok := m.tasks[taskID]; !ok {

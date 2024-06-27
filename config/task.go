@@ -289,7 +289,7 @@ func initTaskConfig(inputType string, rawConfig *beat.Config) (*beat.Config, err
 	return f(rawConfig)
 }
 
-// CreateTaskConfig: 根据字典生成任务配置
+// CreateTaskConfig 根据字典生成任务配置
 func CreateTaskConfig(vars map[string]interface{}) (*TaskConfig, error) {
 	rawConfig, err := common.NewConfigFrom(vars)
 	if err != nil {

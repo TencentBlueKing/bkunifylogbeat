@@ -30,7 +30,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-//TestGetDateTime:
+// TestGetDateTime test get date time
 func TestGetDateTime(t *testing.T) {
 	_, utcTime, timestamp := GetDateTime()
 	st, _ := time.Parse(bkcommon.TimeFormat, utcTime) //string转time

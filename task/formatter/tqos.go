@@ -26,10 +26,6 @@ package formatter
 
 import (
 	"fmt"
-	"path/filepath"
-	"strconv"
-	"strings"
-
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/utils"
@@ -37,18 +33,19 @@ import (
 	"github.com/golang/groupcache/lru"
 )
 
-// 如果未配置close_inactive则直接默认为5分钟
+// TQOSLogConfig 如果未配置close_inactive则直接默认为5分钟
 type TQOSLogConfig struct {
 	HarvesterLimit int `config:"harvester_limit"`
 }
 
+// TQOSFormatter 兼容QOS输出格式
 type TQOSFormatter struct {
 	taskConfig *config.TaskConfig
 	// cache 用于存储TQOS对日志路径的解析结果
 	cache *lru.Cache
 }
 
-// NewTQOSFormatter: 兼容TQOS输出格式
+// NewTQOSFormatter 新兼容TQOS输出格式
 func NewTQOSFormatter(config *config.TaskConfig) (*TQOSFormatter, error) {
 	//获取任务配置中最大的FD数量
 	logConfig := &TQOSLogConfig{
@@ -114,33 +111,11 @@ func (f TQOSFormatter) Format(events []*util.Data) beat.MapStr {
 }
 
 func (f TQOSFormatter) getWorldID(path string) int64 {
-	cache, ok := f.cache.Get(path)
-	if ok {
-		return cache.(int64)
-	}
+	return getWorldIDFromPath(f, path)
+}
 
-	// 如果filename所在目录是“xxx_数字”的形式，worldid就是这个数字，否则为-1
-	worldID := int64(-1)
-	dir, _ := filepath.Split(path)
-	baseName := filepath.Base(dir)
-
-	separator := "_"
-	strPos := strings.Index(baseName, separator)
-
-	if strPos <= 0 || strings.Count(baseName, separator) != 1 {
-		f.cache.Add(path, worldID)
-		return worldID
-	}
-
-	candidate := baseName[strPos+1:]
-	worldID, err := strconv.ParseInt(candidate, 10, 64)
-	if err != nil {
-		worldID = int64(-1)
-		f.cache.Add(path, worldID)
-		return worldID
-	}
-	f.cache.Add(path, worldID)
-	return worldID
+func (f TQOSFormatter) GetCache() *lru.Cache {
+	return f.cache
 }
 
 func init() {

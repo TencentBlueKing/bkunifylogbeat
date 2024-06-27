@@ -20,6 +20,7 @@
 // WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 // SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+//go:build linux
 // +build linux
 
 package utils
@@ -46,12 +47,18 @@ func init() {
 	}
 }
 
+// GetCpuTimes 获取指定进程的CPU时间统计信息。
+// p: 指向 process.Process 的指针，代表要查询的进程。
+// 返回值:
+//
+//	*cpu.TimesStat: 指向 cpu.TimesStat 的指针，包含CPU时间统计信息。
+//	error: 如果发生错误，将返回相应的错误信息。
 func (c *CPULimit) GetCpuTimes(p *process.Process) (*cpu.TimesStat, error) {
 	return GetCpuTime()
 }
 
-//GetEnv retrieves the environment variable key. If it does not exist it returns the default.
-//github.com/shirou/gopsutil@v3.21.8+incompatible/internal/common/common.go
+// GetEnv retrieves the environment variable key. If it does not exist it returns the default.
+// github.com/shirou/gopsutil@v3.21.8+incompatible/internal/common/common.go
 func GetEnv(key string, dfault string, combineWith ...string) string {
 	value := os.Getenv(key)
 	if value == "" {
@@ -85,7 +92,7 @@ func splitProcStat(content []byte) []string {
 	return fields
 }
 
-// copy from github.com/shirou/gopsutil@v3.21.8+incompatible/process/process_linux.go
+// GetCpuTime copy from github.com/shirou/gopsutil@v3.21.8+incompatible/process/process_linux.go
 func GetCpuTime() (*cpu.TimesStat, error) {
 	pid := os.Getpid()
 	var statPath = GetEnv("HOST_PROC", "/proc", strconv.Itoa(pid), "stat")

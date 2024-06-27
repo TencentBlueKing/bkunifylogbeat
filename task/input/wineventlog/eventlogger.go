@@ -146,7 +146,7 @@ func (e *eventLogger) run(
 	}
 }
 
-// WinLogStateToFileState
+// WinLogStateToFileState windows log state to file state
 func WinLogStateToFileState(cs checkpoint.EventLogState) file.State {
 	return file.State{
 		Id:        cs.Name,
@@ -162,7 +162,7 @@ func WinLogStateToFileState(cs checkpoint.EventLogState) file.State {
 	}
 }
 
-// FileStateToWinLogState
+// FileStateToWinLogState file state to windows log state
 func FileStateToWinLogState(st file.State) checkpoint.EventLogState {
 	recordNumber, _ := strconv.ParseUint(st.Meta["RecordNumber"], 10, 64)
 	return checkpoint.EventLogState{

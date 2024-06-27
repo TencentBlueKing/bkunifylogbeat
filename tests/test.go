@@ -31,7 +31,7 @@ import (
 	"github.com/elastic/beats/filebeat/util"
 )
 
-// MockLogEvent : 生成日志采集事件
+// MockLogEvent 生成日志采集事件
 func MockLogEvent(source string, content string) *util.Data {
 	data := &util.Data{
 		Event: beat.Event{

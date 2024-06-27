@@ -29,7 +29,7 @@ import (
 	"github.com/elastic/beats/libbeat/common"
 )
 
-//HashRawConfig : 获取配置hash值
+// HashRawConfig 获取配置hash值
 func HashRawConfig(config *common.Config) (error, string) {
 	source := map[string]interface{}{}
 	_ = config.Unpack(source)

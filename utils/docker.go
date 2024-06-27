@@ -48,20 +48,21 @@ func IsInDocker() bool {
 	return false
 }
 
-//$ cat /proc/self/mounts
+// $ cat /proc/self/mounts
 // ...
-//cgroup /sys/fs/cgroup/systemd cgroup rw,nosuid,nodev,noexec,relatime,xattr,release_agent=/usr/lib/systemd/systemd-cgroups-agent,name=systemd 0 0
-//pstore /sys/fs/pstore pstore rw,nosuid,nodev,noexec,relatime 0 0
-//cgroup /sys/fs/cgroup/memory cgroup rw,nosuid,nodev,noexec,relatime,memory 0 0
-//cgroup /sys/fs/cgroup/perf_event cgroup rw,nosuid,nodev,noexec,relatime,perf_event 0 0
-//cgroup /sys/fs/cgroup/devices cgroup rw,nosuid,nodev,noexec,relatime,devices 0 0
-//cgroup /sys/fs/cgroup/freezer cgroup rw,nosuid,nodev,noexec,relatime,freezer 0 0
-//cgroup /sys/fs/cgroup/blkio cgroup rw,nosuid,nodev,noexec,relatime,blkio 0 0
-//cgroup /sys/fs/cgroup/cpu,cpuacct cgroup rw,nosuid,nodev,noexec,relatime,cpuacct,cpu 0 0
-//cgroup /sys/fs/cgroup/cpuset cgroup rw,nosuid,nodev,noexec,relatime,cpuset 0 0
-//cgroup /sys/fs/cgroup/net_cls,net_prio cgroup rw,nosuid,nodev,noexec,relatime,net_prio,net_cls 0 0
-//cgroup /sys/fs/cgroup/hugetlb cgroup rw,nosuid,nodev,noexec,relatime,hugetlb 0 0
-//cgroup /sys/fs/cgroup/pids cgroup rw,nosuid,nodev,noexec,relatime,pids 0 0
+// cgroup /sys/fs/cgroup/systemd cgroup rw,nosuid,nodev,noexec,relatime,xattr,
+// release_agent=/usr/lib/systemd/systemd-cgroups-agent,name=systemd 0 0
+// pstore /sys/fs/pstore pstore rw,nosuid,nodev,noexec,relatime 0 0
+// cgroup /sys/fs/cgroup/memory cgroup rw,nosuid,nodev,noexec,relatime,memory 0 0
+// cgroup /sys/fs/cgroup/perf_event cgroup rw,nosuid,nodev,noexec,relatime,perf_event 0 0
+// cgroup /sys/fs/cgroup/devices cgroup rw,nosuid,nodev,noexec,relatime,devices 0 0
+// cgroup /sys/fs/cgroup/freezer cgroup rw,nosuid,nodev,noexec,relatime,freezer 0 0
+// cgroup /sys/fs/cgroup/blkio cgroup rw,nosuid,nodev,noexec,relatime,blkio 0 0
+// cgroup /sys/fs/cgroup/cpu,cpuacct cgroup rw,nosuid,nodev,noexec,relatime,cpuacct,cpu 0 0
+// cgroup /sys/fs/cgroup/cpuset cgroup rw,nosuid,nodev,noexec,relatime,cpuset 0 0
+// cgroup /sys/fs/cgroup/net_cls,net_prio cgroup rw,nosuid,nodev,noexec,relatime,net_prio,net_cls 0 0
+// cgroup /sys/fs/cgroup/hugetlb cgroup rw,nosuid,nodev,noexec,relatime,hugetlb 0 0
+// cgroup /sys/fs/cgroup/pids cgroup rw,nosuid,nodev,noexec,relatime,pids 0 0
 // ...
 func ifCgroupReadonly() bool {
 	bs, err := ioutil.ReadFile("/proc/self/mounts")
@@ -96,20 +97,20 @@ func isContainRo(s string) bool {
 	return false
 }
 
-//$ cat /proc/1/sched
-//systemd (963838, #threads: 1)
-//---------------------------------------------------------
-//se.exec_start                      :    8479909718.879537
-//se.vruntime                        :          2223.728642
-//se.sum_exec_runtime                :          1381.767962
-//nr_switches                        :                10278
-//nr_voluntary_switches              :                 8845
-//nr_involuntary_switches            :                 1433
-//se.load.weight                     :                 1024
-//policy                             :                    0
-//prio                               :                  120
-//clock-delta                        :                   79
-//...
+// $ cat /proc/1/sched
+// systemd (963838, #threads: 1)
+// ---------------------------------------------------------
+// se.exec_start                      :    8479909718.879537
+// se.vruntime                        :          2223.728642
+// se.sum_exec_runtime                :          1381.767962
+// nr_switches                        :                10278
+// nr_voluntary_switches              :                 8845
+// nr_involuntary_switches            :                 1433
+// se.load.weight                     :                 1024
+// policy                             :                    0
+// prio                               :                  120
+// clock-delta                        :                   79
+// ...
 func ifSchedProc() bool {
 	bs, err := ioutil.ReadFile("/proc/1/sched")
 	if err != nil {

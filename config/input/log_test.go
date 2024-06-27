@@ -25,8 +25,8 @@ package input
 import (
 	"testing"
 
-	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
+	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/elastic/beats/libbeat/common"
 	libbeatlogp "github.com/elastic/beats/libbeat/logp"
 	"github.com/stretchr/testify/assert"
