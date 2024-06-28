@@ -37,6 +37,12 @@ config_templates:
     file_path: etc/bkunifylogbeat
     format: yaml
     source_path: etc/bkunifylogbeat_winlog.conf.tpl
+  - plugin_version: "*"
+    name: bkunifylogbeat_kafka.conf
+    version: 1
+    file_path: etc/bkunifylogbeat
+    format: yaml
+    source_path: etc/bkunifylogbeat_kafka.conf.tpl
 control:
   start: "start.bat bkunifylogbeat"
   stop: "stop.bat bkunifylogbeat"
