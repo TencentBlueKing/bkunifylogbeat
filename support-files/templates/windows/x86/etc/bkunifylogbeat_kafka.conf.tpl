@@ -1,12 +1,12 @@
 {% if local is defined %}
 local: {% for item in local %}
     - dataid: {{ dataid | int }}
-      type: kafka
-      hosts: {%for host in item.hosts %}
-        - {{ host }}
-        {% endfor %}
 
-      topics: item.get('topics', [])
+      type: kafka
+
+      hosts: {{ item.get('hosts', []) }}
+
+      topics: {{ item.get('topics', []) }}
 
       {% if item.ssl is defined and item.ssl %}ssl: {{ item.ssl }}{% endif %}
       username: '{{ item.get('username', '') }}'
