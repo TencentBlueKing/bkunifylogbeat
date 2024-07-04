@@ -4,9 +4,9 @@ local: {% for item in local %}
 
       type: kafka
 
-      hosts: {{ item.get('hosts', []) }}
+      {% if item.hosts is defined and item.hosts %}hosts: {{ item.hosts }}{% endif %}
 
-      topics: {{ item.get('topics', []) }}
+      {% if item.topics is defined and item.topics %}topics: {{ item.topics }}{% endif %}
 
       {% if item.ssl is defined and item.ssl %}ssl: {{ item.ssl }}{% endif %}
       username: '{{ item.get('username', '') }}'
