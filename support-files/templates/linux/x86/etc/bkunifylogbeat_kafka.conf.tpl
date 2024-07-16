@@ -18,10 +18,10 @@ local: {% for item in local %}
 
       delimiter: '{{ item.get('delimiter', '') }}'
       {% if item.filters is defined and item.filters %}filters:{% for filter in item.filters %}
-       - conditions:{% for condition in filter.conditions %}
-        - index: {{ condition.index | int }}
-         key: '{{ condition.key}}'
-         op: '{{ condition.op }}'{% endfor %}
+        - conditions:{% for condition in filter.conditions %}
+          - index: {{ condition.index | int }}
+            key: '{{ condition.key}}'
+            op: '{{ condition.op }}'{% endfor %}
       {% endfor %}{% endif %}
 
       {% if item.ext_meta is defined or item.labels is defined %}ext_meta:
