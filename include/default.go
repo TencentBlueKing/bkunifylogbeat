@@ -23,6 +23,8 @@
 package include
 
 import (
+	// input type : kafka
+	_ "github.com/elastic/beats/filebeat/input/kafka"
 	// input type : log
 	_ "github.com/elastic/beats/filebeat/input/log"
 	// input type : redis
