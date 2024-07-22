@@ -23,14 +23,20 @@
 package include
 
 import (
-	// input type
+	// input type : kafka
 	_ "github.com/elastic/beats/filebeat/input/kafka"
+	// input type : log
 	_ "github.com/elastic/beats/filebeat/input/log"
+	// input type : redis
 	_ "github.com/elastic/beats/filebeat/input/redis"
+	// input type : stdin
 	_ "github.com/elastic/beats/filebeat/input/stdin"
+	// input type : syslog
 	_ "github.com/elastic/beats/filebeat/input/syslog"
+	// input type : udp
 	_ "github.com/elastic/beats/filebeat/input/udp"
 
+	// window event log
 	_ "github.com/TencentBlueKing/bkunifylogbeat/task/input/wineventlog"
 
 	// input config

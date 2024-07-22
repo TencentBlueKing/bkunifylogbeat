@@ -26,10 +26,6 @@ package formatter
 
 import (
 	"fmt"
-	"path/filepath"
-	"strconv"
-	"strings"
-
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/utils"
@@ -37,7 +33,7 @@ import (
 	"github.com/golang/groupcache/lru"
 )
 
-// 如果未配置close_inactive则直接默认为5分钟
+// LogConfig 如果未配置close_inactive则直接默认为5分钟
 type LogConfig struct {
 	HarvesterLimit int `config:"harvester_limit"`
 }
@@ -115,35 +111,12 @@ func (f unifytlogcFormatter) Format(events []*util.Data) beat.MapStr {
 	}
 	return data
 }
-
 func (f unifytlogcFormatter) getWorldID(path string) int64 {
-	cache, ok := f.cache.Get(path)
-	if ok {
-		return cache.(int64)
-	}
+	return getWorldIDFromPath(f, path)
+}
 
-	// 如果filename所在目录是“xxx_数字”的形式，worldid就是这个数字，否则为-1
-	worldID := int64(-1)
-	dir, _ := filepath.Split(path)
-	baseName := filepath.Base(dir)
-
-	separator := "_"
-	strPos := strings.Index(baseName, separator)
-
-	if strPos <= 0 || strings.Count(baseName, separator) != 1 {
-		f.cache.Add(path, worldID)
-		return worldID
-	}
-
-	candidate := baseName[strPos+1:]
-	worldID, err := strconv.ParseInt(candidate, 10, 64)
-	if err != nil {
-		worldID = int64(-1)
-		f.cache.Add(path, worldID)
-		return worldID
-	}
-	f.cache.Add(path, worldID)
-	return worldID
+func (f unifytlogcFormatter) GetCache() *lru.Cache {
+	return f.cache
 }
 
 func init() {

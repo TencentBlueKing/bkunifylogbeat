@@ -29,7 +29,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-//TestMd5: 测试字符串MD5
+// TestMd5 测试字符串MD5
 func TestMd5(t *testing.T) {
 	tests := []struct {
 		source string
@@ -46,7 +46,7 @@ func TestMd5(t *testing.T) {
 	}
 }
 
-//TestHashRawConfigHash: 测试RawConfig HASH结果
+// TestHashRawConfigHash 测试RawConfig HASH结果
 func TestHashRawConfigHash(t *testing.T) {
 	//RawConfig不依赖于各配置的顺序
 	vars := map[string]interface{}{

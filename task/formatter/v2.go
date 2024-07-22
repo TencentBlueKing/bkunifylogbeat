@@ -27,9 +27,7 @@ package formatter
 import (
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
-	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 	"github.com/elastic/beats/filebeat/util"
-	"strings"
 )
 
 type v2Formatter struct {
@@ -41,7 +39,7 @@ type LineItem struct {
 	IterationIndex int    `json:"iterationindex"`
 }
 
-// NewV2Formatter : bkunifylogbeat日志采集输出格式
+// NewV2Formatter bkunifylogbeat日志采集输出格式
 func NewV2Formatter(config *config.TaskConfig) (*v2Formatter, error) {
 	f := &v2Formatter{
 		taskConfig: config,
@@ -49,26 +47,13 @@ func NewV2Formatter(config *config.TaskConfig) (*v2Formatter, error) {
 	return f, nil
 }
 
+func (f v2Formatter) GetTaskConfig() *config.TaskConfig {
+	return f.taskConfig
+}
+
 // Format : 最新格式兼容
 func (f v2Formatter) Format(events []*util.Data) beat.MapStr {
-	var (
-		datetime, utcTime string
-		timestamp         int64
-	)
-	datetime, utcTime, timestamp = utils.GetDateTime()
-
-	lastState := events[len(events)-1].GetState()
-	filename := lastState.Source
-	if len(f.taskConfig.RemovePathPrefix) > 0 {
-		filename = strings.TrimPrefix(filename, f.taskConfig.RemovePathPrefix)
-	}
-	data := beat.MapStr{
-		"dataid":   f.taskConfig.DataID,
-		"filename": filename,
-		"datetime": datetime,
-		"utctime":  utcTime,
-		"time":     timestamp,
-	}
+	data := prepareData(f, events)
 
 	hasEvent := false
 

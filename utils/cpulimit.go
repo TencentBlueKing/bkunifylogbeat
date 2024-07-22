@@ -41,6 +41,7 @@ const (
 	MaxCheckTimes = 10
 )
 
+// CPULimit cpu limit object
 type CPULimit struct {
 	limit         int // cpu limit percent
 	checkTimes    int // check cpu usage in one second
@@ -52,7 +53,7 @@ type CPULimit struct {
 	done      chan struct{}
 }
 
-// NewCPULimit : new cpu limit object
+// NewCPULimit new cpu limit object
 func NewCPULimit(l, checkTimes int) *CPULimit {
 	if checkTimes < 1 || checkTimes > MaxCheckTimes {
 		checkTimes = MaxCheckTimes
@@ -160,7 +161,9 @@ func (c *CPULimit) GetCheckInterval() time.Duration {
 	return c.checkInterval
 }
 
-// SetResourceLimit 在一定程度上限制CPU使用
+// SetResourceLimit : 在一定程度上限制CPU使用
+// maxCpuLimit: 最大CPU使用率限制
+// checkTimes: 资源限制的检查次数
 func SetResourceLimit(maxCpuLimit, checkTimes int) {
 	numCPU := runtime.NumCPU()
 	// 在docker富容器中 并且 开启了速率限制

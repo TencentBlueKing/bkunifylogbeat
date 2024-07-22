@@ -46,14 +46,14 @@ var (
 	processHandledTotal = bkmonitoring.NewInt("processors_handled_total")
 )
 
-// Processors : 兼容数据平台过滤规则
+// Processors 兼容数据平台过滤规则
 type Processors struct {
 	*base.Node
 
 	processors *process.Processors
 }
 
-// GetProcessors : 获取processor
+// GetProcessors 获取processor
 func GetProcessors(taskCfg *config.TaskConfig, taskNode *base.TaskNode) (*Processors, error) {
 	var (
 		ok bool
@@ -84,7 +84,7 @@ func GetProcessors(taskCfg *config.TaskConfig, taskNode *base.TaskNode) (*Proces
 	return NewProcessors(taskCfg, taskNode)
 }
 
-// NewProcessors : 新建processor
+// NewProcessors 新建processor
 func NewProcessors(taskCfg *config.TaskConfig, taskNode *base.TaskNode) (*Processors, error) {
 	var err error
 	var p = &Processors{
@@ -114,7 +114,7 @@ func NewProcessors(taskCfg *config.TaskConfig, taskNode *base.TaskNode) (*Proces
 	return p, nil
 }
 
-// RemoveProcessors : 移除全局缓存
+// RemoveProcessors 移除全局缓存
 func RemoveProcessors(id string) {
 	logp.L.Infof("remove processors(%s) in global processorsMaps", id)
 	mtx.Lock()
@@ -123,7 +123,7 @@ func RemoveProcessors(id string) {
 	numOfProcessTotal.Add(-1)
 }
 
-// MergeProcessorsConfig : 合并多个任务的Processor配置
+// MergeProcessorsConfig 合并多个任务的Processor配置
 // 理论上Merge这里不存在任何动作，因为Processor的配置是一样的
 func (p *Processors) MergeProcessorsConfig(taskCfg *config.TaskConfig) error {
 	var err error
@@ -136,7 +136,7 @@ func (p *Processors) MergeProcessorsConfig(taskCfg *config.TaskConfig) error {
 	return nil
 }
 
-// Run : 循环处理数据
+// Run 循环处理数据
 func (p *Processors) Run() {
 	defer close(p.GameOver)
 	defer RemoveProcessors(p.ID)
@@ -171,7 +171,7 @@ func (p *Processors) Run() {
 	}
 }
 
-// Handle : 处理采集事件
+// Handle 处理采集事件
 func (p *Processors) Handle(event *beat.Event) *beat.Event {
 	if event.Fields == nil {
 		return event

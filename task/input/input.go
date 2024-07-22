@@ -51,6 +51,7 @@ var (
 	inputHandledTotal = bkmonitoring.NewInt("input_handled_total")
 )
 
+// ContainerStdoutFields container 标准输出字段
 type ContainerStdoutFields struct {
 	Log    string `json:"log"`
 	Stream string `json:"stream"`

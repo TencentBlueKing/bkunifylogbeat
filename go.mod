@@ -8,6 +8,7 @@ require (
 	github.com/bytedance/sonic v1.10.0
 	github.com/dustin/go-humanize v1.0.0
 	github.com/elastic/beats v7.1.1+incompatible
+	github.com/fsnotify/fsnotify v1.5.4
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/pkg/errors v0.9.1
 	github.com/shirou/gopsutil v3.21.8+incompatible
@@ -22,7 +23,7 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/boltdb/bolt v1.3.1 // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
-	github.com/cespare/xxhash/v2 v2.1.2 // indirect
+	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/chenzhuoyu/base64x v0.0.0-20230717121745-296ad89f973d // indirect
 	github.com/chenzhuoyu/iasm v0.9.0 // indirect
 	github.com/containerd/cgroups v1.0.1 // indirect
@@ -46,9 +47,10 @@ require (
 	github.com/godbus/dbus/v5 v5.0.3 // indirect
 	github.com/gofrs/uuid v4.3.0+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/btree v1.0.1 // indirect
+	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/grafana/regexp v0.0.0-20220304095617-2e8d9baf4ac2 // indirect
 	github.com/hashicorp/go-uuid v1.0.2 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
@@ -78,6 +80,7 @@ require (
 	github.com/tklauser/numcpus v0.3.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
+	go.uber.org/goleak v1.2.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/arch v0.0.0-20210923205945-b76863e36670 // indirect

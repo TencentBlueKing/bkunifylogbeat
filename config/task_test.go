@@ -28,7 +28,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-//TestTaskConfig_Same: 测试任务解析
+// TestTaskConfig_Same 测试任务解析
 func TestTaskConfig_Same(t *testing.T) {
 	vars := map[string]interface{}{
 		"dataid":          "999990001",

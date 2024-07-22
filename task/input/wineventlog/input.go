@@ -109,7 +109,7 @@ func (p *Input) Wait() {
 	p.Stop()
 }
 
-// NewInput: creates a new windows event input
+// NewInput creates a new windows event input
 func NewInput(
 	cfg *common.Config,
 	outletFactory channel.Connector,

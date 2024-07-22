@@ -23,15 +23,8 @@
 package formatter
 
 import (
-	"testing"
-	"time"
-
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
-	"github.com/elastic/beats/filebeat/input/file"
-	"github.com/elastic/beats/filebeat/util"
-	"github.com/elastic/beats/libbeat/beat"
-	"github.com/elastic/beats/libbeat/common"
-	"github.com/stretchr/testify/assert"
+	"testing"
 )
 
 func TestNewTQOSFormatter(t *testing.T) {
@@ -43,45 +36,5 @@ func TestNewTQOSFormatter(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	f, err := NewTQOSFormatter(taskConfig)
-	if err != nil {
-		panic(err)
-	}
-
-	event := &util.Data{
-		Event: beat.Event{
-			Timestamp: time.Now(),
-			Fields: common.MapStr{
-				"data": "log",
-			},
-		},
-	}
-
-	// 获取world_id测试用例
-	testCases := map[string]int64{
-		"/data/logs/test/test.log":          int64(-1),
-		"/data/logs/test_111test/test.log":  int64(-1),
-		"/data/logs/test_111_test/test.log": int64(-1),
-		"/data/logs/test_0/test.log":        int64(0),
-		"/data/logs/test_111/test.log":      int64(111),
-		"/data/logs/test_888/test.log":      int64(888),
-	}
-	for path, worldID := range testCases {
-		event.SetState(file.State{
-			Source: path,
-		})
-		events := []*util.Data{event}
-		result := f.Format(events)
-		t.Log(path, worldID, result["worldid"])
-		assert.Equal(t, worldID, result["worldid"])
-	}
-	for path, worldID := range testCases {
-		event.SetState(file.State{
-			Source: path,
-		})
-		events := []*util.Data{event}
-		result := f.Format(events)
-		t.Log(path, worldID, result["worldid"])
-		assert.Equal(t, worldID, result["worldid"])
-	}
+	BaseFormatter(t, taskConfig)
 }

@@ -36,7 +36,7 @@ import (
 	"syscall"
 )
 
-// ToMapStr returns a new MapStr containing the data from this Record.
+// ToEvent ToMapStr returns a new MapStr containing the data from this Record.
 func ToEvent(e eventlog.Record) beat.Event {
 	// Windows Log Specific data
 	win := common.MapStr{
