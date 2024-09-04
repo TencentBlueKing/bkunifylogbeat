@@ -9,4 +9,4 @@ WORKDIR /data
 COPY --from=builder /workspace/bkunifylogbeat /bin/bkunifylogbeat
 COPY bkunifylogbeat_main.yml /etc/bkunifylogbeat.conf
 RUN yum install -y strace lsof
-ENTRYPOINT ["/bin/bkunifylogbeat", "-c", "/etc/bkunifylogbeat.conf"]
+ENTRYPOINT ["/bin/bkunifylogbeat", "-c", "/etc/bkunifylogbeat/bkunifylogbeat.conf"]
