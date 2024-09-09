@@ -26,6 +26,7 @@ package formatter
 
 import (
 	"fmt"
+
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/utils"
@@ -102,7 +103,7 @@ func (f TQOSFormatter) Format(events []*util.Data) beat.MapStr {
 	data["worldid"] = f.getWorldID(lastState.Source)
 
 	//发送正常事件
-	if f.taskConfig.ExtMeta != nil {
+	if len(f.taskConfig.GetExtMeta()) > 0 {
 		data["private"] = f.taskConfig.ExtMeta
 	} else {
 		data["private"] = ""

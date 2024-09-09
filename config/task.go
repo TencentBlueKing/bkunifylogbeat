@@ -23,15 +23,19 @@
 package config
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/libbeat/processors"
-	"path/filepath"
-	"sort"
-	"strings"
 )
 
 // ConditionConfig : 用于条件表达式，目前支持=、!=、eq、neq、include、exclude、regex、nregex
@@ -74,13 +78,60 @@ type FiltersConfig struct {
 }
 
 type SenderConfig struct {
-	CanPackage   bool        `config:"package"`
-	PackageCount int         `config:"package_count"`
-	ExtMeta      interface{} `config:"ext_meta"`
+	CanPackage   bool `config:"package"`
+	PackageCount int  `config:"package_count"`
+
+	// meta
+	ExtMeta     map[string]string `config:"ext_meta"`
+	ExtMetaFile string            `config:"ext_meta_file"`
+	ExtMetaEnv  []string          `config:"ext_meta_env"`
 
 	// Output
 	RemovePathPrefix string `config:"remove_path_prefix"` // 去除路径前缀
 	OutputFormat     string `config:"output_format"`      // 输出格式，为了兼容老版采集器的输出格式
+}
+
+func loadMetaFile(p string) map[string]string {
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return nil
+	}
+
+	meta := make(map[string]string)
+	scanner := bufio.NewScanner(bytes.NewBuffer(b))
+	for scanner.Scan() {
+		line := scanner.Text()
+		parts := strings.Split(line, "=")
+		if len(parts) != 2 {
+			continue
+		}
+
+		v := strings.TrimSpace(parts[1])
+		strings.Trim(v, `"`)
+		meta[parts[0]] = v
+	}
+	return meta
+}
+
+func (c SenderConfig) GetExtMeta() map[string]string {
+	ext := make(map[string]string)
+	for k, v := range c.ExtMeta {
+		ext[k] = v
+	}
+
+	if len(c.ExtMetaFile) > 0 {
+		for k, v := range loadMetaFile(c.ExtMetaFile) {
+			ext[k] = v
+		}
+	}
+
+	if len(c.ExtMetaEnv) > 0 {
+		for _, k := range c.ExtMetaEnv {
+			ext[k] = os.Getenv(k)
+		}
+	}
+
+	return ext
 }
 
 // TaskConfig 采集任务配置
@@ -92,6 +143,8 @@ type TaskConfig struct {
 	ProcessorConfig `config:",inline"`
 	FiltersConfig   `config:",inline"`
 	SenderConfig    `config:",inline"`
+
+	ext map[string]string
 
 	// 用来标识配置的唯一性
 	InputID     string
@@ -105,6 +158,10 @@ type TaskConfig struct {
 	Output common.ConfigNamespace `config:"output"`
 
 	RawConfig *beat.Config
+}
+
+func (c *TaskConfig) GetExtMeta() map[string]string {
+	return c.ext
 }
 
 // NewTaskConfig 创建采集任务配置
@@ -180,6 +237,7 @@ func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
 
 	initIDWithConfig(config)
 
+	config.ext = config.SenderConfig.GetExtMeta() // 加载 extmeta
 	return config, nil
 }
 
