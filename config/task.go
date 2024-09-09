@@ -84,7 +84,7 @@ type SenderConfig struct {
 	// meta
 	ExtMeta     map[string]string `config:"ext_meta"`
 	ExtMetaFile string            `config:"ext_meta_file"`
-	ExtMetaEnv  []string          `config:"ext_meta_env"`
+	ExtMetaEnv  map[string]string `config:"ext_meta_env"`
 
 	// Output
 	RemovePathPrefix string `config:"remove_path_prefix"` // 去除路径前缀
@@ -106,8 +106,7 @@ func loadMetaFile(p string) map[string]string {
 			continue
 		}
 
-		v := strings.TrimSpace(parts[1])
-		strings.Trim(v, `"`)
+		v := strings.Trim(strings.TrimSpace(parts[1]), `"`)
 		meta[parts[0]] = v
 	}
 	return meta
@@ -126,8 +125,8 @@ func (c SenderConfig) GetExtMeta() map[string]string {
 	}
 
 	if len(c.ExtMetaEnv) > 0 {
-		for _, k := range c.ExtMetaEnv {
-			ext[k] = os.Getenv(k)
+		for env, realKey := range c.ExtMetaEnv {
+			ext[realKey] = os.Getenv(env)
 		}
 	}
 
