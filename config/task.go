@@ -101,13 +101,13 @@ func loadMetaFile(p string) map[string]string {
 	scanner := bufio.NewScanner(bytes.NewBuffer(b))
 	for scanner.Scan() {
 		line := scanner.Text()
-		parts := strings.Split(line, "=")
+		parts := strings.SplitN(line, "=", 2)
 		if len(parts) != 2 {
 			continue
 		}
 
 		v := strings.Trim(strings.TrimSpace(parts[1]), `"`)
-		meta[parts[0]] = v
+		meta[strings.TrimSpace(parts[0])] = v
 	}
 	return meta
 }
@@ -118,18 +118,14 @@ func (c SenderConfig) GetExtMeta() map[string]interface{} {
 		ext[k] = v
 	}
 
-	if len(c.ExtMetaFiles) > 0 {
-		for _, f := range c.ExtMetaFiles {
-			for k, v := range loadMetaFile(f) {
-				ext[k] = v
-			}
+	for _, f := range c.ExtMetaFiles {
+		for k, v := range loadMetaFile(f) {
+			ext[k] = v
 		}
 	}
 
-	if len(c.ExtMetaEnv) > 0 {
-		for newKey, env := range c.ExtMetaEnv {
-			ext[newKey] = os.Getenv(env)
-		}
+	for newKey, env := range c.ExtMetaEnv {
+		ext[newKey] = os.Getenv(env)
 	}
 
 	return ext

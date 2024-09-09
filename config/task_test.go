@@ -23,6 +23,7 @@
 package config
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -45,4 +46,33 @@ func TestTaskConfig_Same(t *testing.T) {
 	}
 	taskConfig3, _ := CreateTaskConfig(vars2)
 	assert.False(t, taskConfig1.Same(taskConfig3))
+}
+
+func TestLoadMetaFile(t *testing.T) {
+	f, err := os.CreateTemp("", "meta.file")
+	assert.NoError(t, err)
+
+	content := []byte(`
+k1=v1
+k2="v2"
+k3 = "v3"
+k4= "v4"
+k5= "v5=foo"
+#
+foobar
+`)
+
+	f.Write(content)
+	defer os.Remove(f.Name())
+
+	meta := loadMetaFile(f.Name())
+	excepted := map[string]string{
+		"k1": "v1",
+		"k2": "v2",
+		"k3": "v3",
+		"k4": "v4",
+		"k5": "v5=foo",
+	}
+
+	assert.Equal(t, excepted, meta)
 }
