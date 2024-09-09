@@ -82,9 +82,9 @@ type SenderConfig struct {
 	PackageCount int  `config:"package_count"`
 
 	// meta
-	ExtMeta     map[string]string `config:"ext_meta"`
-	ExtMetaFile string            `config:"ext_meta_file"`
-	ExtMetaEnv  map[string]string `config:"ext_meta_env"`
+	ExtMeta      map[string]interface{} `config:"ext_meta"`
+	ExtMetaFiles []string               `config:"ext_meta_files"`
+	ExtMetaEnv   map[string]string      `config:"ext_meta_env"`
 
 	// Output
 	RemovePathPrefix string `config:"remove_path_prefix"` // 去除路径前缀
@@ -118,15 +118,17 @@ func (c SenderConfig) GetExtMeta() map[string]interface{} {
 		ext[k] = v
 	}
 
-	if len(c.ExtMetaFile) > 0 {
-		for k, v := range loadMetaFile(c.ExtMetaFile) {
-			ext[k] = v
+	if len(c.ExtMetaFiles) > 0 {
+		for _, f := range c.ExtMetaFiles {
+			for k, v := range loadMetaFile(f) {
+				ext[k] = v
+			}
 		}
 	}
 
 	if len(c.ExtMetaEnv) > 0 {
-		for env, realKey := range c.ExtMetaEnv {
-			ext[realKey] = os.Getenv(env)
+		for newKey, env := range c.ExtMetaEnv {
+			ext[newKey] = os.Getenv(env)
 		}
 	}
 
