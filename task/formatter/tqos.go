@@ -104,7 +104,7 @@ func (f TQOSFormatter) Format(events []*util.Data) beat.MapStr {
 
 	//发送正常事件
 	if len(f.taskConfig.GetExtMeta()) > 0 {
-		data["private"] = f.taskConfig.ExtMeta
+		data["private"] = f.taskConfig.GetExtMeta()
 	} else {
 		data["private"] = ""
 	}

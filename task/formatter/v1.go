@@ -98,7 +98,7 @@ func (f v1Formatter) Format(events []*util.Data) beat.MapStr {
 
 	//发送正常事件
 	if len(f.taskConfig.GetExtMeta()) > 0 {
-		data["ext"] = f.taskConfig.ExtMeta
+		data["ext"] = f.taskConfig.GetExtMeta()
 	} else {
 		data["ext"] = ""
 	}

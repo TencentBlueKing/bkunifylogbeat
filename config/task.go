@@ -112,8 +112,8 @@ func loadMetaFile(p string) map[string]string {
 	return meta
 }
 
-func (c SenderConfig) GetExtMeta() map[string]string {
-	ext := make(map[string]string)
+func (c SenderConfig) GetExtMeta() map[string]interface{} {
+	ext := make(map[string]interface{})
 	for k, v := range c.ExtMeta {
 		ext[k] = v
 	}
@@ -143,7 +143,7 @@ type TaskConfig struct {
 	FiltersConfig   `config:",inline"`
 	SenderConfig    `config:",inline"`
 
-	ext map[string]string
+	ext map[string]interface{}
 
 	// 用来标识配置的唯一性
 	InputID     string
@@ -159,7 +159,7 @@ type TaskConfig struct {
 	RawConfig *beat.Config
 }
 
-func (c *TaskConfig) GetExtMeta() map[string]string {
+func (c *TaskConfig) GetExtMeta() map[string]interface{} {
 	return c.ext
 }
 

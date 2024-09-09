@@ -106,7 +106,7 @@ func (f unifytlogcFormatter) Format(events []*util.Data) beat.MapStr {
 
 	//发送正常事件
 	if len(f.taskConfig.GetExtMeta()) > 0 {
-		data["_private_"] = f.taskConfig.ExtMeta
+		data["_private_"] = f.taskConfig.GetExtMeta()
 	} else {
 		data["_private_"] = ""
 	}
