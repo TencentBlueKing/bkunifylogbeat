@@ -46,6 +46,9 @@ type Config struct {
 	// SecConfigs sec config path and pattern
 	SecConfigs []SecConfigItem `config:"multi_config"`
 
+	// Tasks 允许加载子配置采集项
+	Tasks []TaskConfig `config:"tasks"`
+
 	Registry Registry `config:"registry"`
 
 	HostIDPath         string `config:"host_id_path"`

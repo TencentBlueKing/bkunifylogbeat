@@ -275,6 +275,25 @@ func (sourceConfig *TaskConfig) Same(targetConfig *TaskConfig) bool {
 	return sourceConfig.ID == targetConfig.ID
 }
 
+// loadTasks 从主配置中直接加载任务
+func loadTasks(config Config) map[string]*TaskConfig {
+	tasks := make(map[string]*TaskConfig)
+	for _, c := range config.Tasks {
+		cfg, err := common.NewConfigFrom(c)
+		if err != nil {
+			continue
+		}
+		task, err := NewTaskConfig(cfg)
+		if err != nil {
+			logp.L.Errorf("load task failed: %v", err)
+			continue
+		}
+
+		tasks[task.ID] = task
+	}
+	return tasks
+}
+
 // GetTasks 根据主配置定义的从配置目录，获取采集器定义的任务列表
 func GetTasks(config Config) map[string]*TaskConfig {
 	tasks := make(map[string]*TaskConfig)
@@ -324,6 +343,12 @@ func GetTasks(config Config) map[string]*TaskConfig {
 			}
 		}
 	}
+
+	// 合并主配置内容
+	for k, v := range loadTasks(config) {
+		tasks[k] = v
+	}
+
 	return tasks
 }
 
