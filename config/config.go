@@ -47,7 +47,7 @@ type Config struct {
 	SecConfigs []SecConfigItem `config:"multi_config"`
 
 	// Tasks 允许加载子配置采集项
-	Tasks []TaskConfig `config:"tasks"`
+	Tasks []interface{} `config:"tasks"`
 
 	Registry Registry `config:"registry"`
 
