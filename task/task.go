@@ -25,6 +25,7 @@ package task
 
 import (
 	"fmt"
+
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	bkmonitoring "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/monitoring"
@@ -75,7 +76,7 @@ func NewTask(config *cfg.TaskConfig, beatDone chan struct{}, lastStates []file.S
 	if err != nil {
 		return nil, fmt.Errorf("[%s] error while get input: %s", task.ID, err)
 	}
-	logp.L.Infof("init task finish. task Map is:", task.Node)
+	logp.L.Infof("init task finish. task Map is: %v", task.Node)
 
 	if task.Config.Output.Name() != "" {
 		err = bkpipe_multi.RegisterTaskOutput(task.Config.ID, task.Config.Output)

@@ -25,11 +25,12 @@
 package formatter
 
 import (
+	"strings"
+
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 	"github.com/elastic/beats/filebeat/util"
-	"strings"
 )
 
 type v1Formatter struct {
@@ -96,8 +97,8 @@ func (f v1Formatter) Format(events []*util.Data) beat.MapStr {
 	data["data"] = texts
 
 	//发送正常事件
-	if f.taskConfig.ExtMeta != nil {
-		data["ext"] = f.taskConfig.ExtMeta
+	if len(f.taskConfig.GetExtMeta()) > 0 {
+		data["ext"] = f.taskConfig.GetExtMeta()
 	} else {
 		data["ext"] = ""
 	}
