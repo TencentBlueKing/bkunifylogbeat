@@ -123,7 +123,7 @@ func (bt *LogBeat) Run() error {
 	}
 
 	reloadTicker := time.NewTicker(10 * time.Second)
-	diffTaskTicker := time.NewTicker(10 * time.Second)
+	diffTaskTicker := time.NewTicker(60 * time.Second)
 	defer reloadTicker.Stop()
 	for {
 		select {
