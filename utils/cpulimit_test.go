@@ -24,7 +24,6 @@ package utils
 
 import (
 	"fmt"
-	"github.com/shirou/gopsutil/process"
 	"os"
 	"runtime"
 	"testing"
@@ -32,6 +31,7 @@ import (
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	libbeatlogp "github.com/elastic/beats/libbeat/logp"
+	"github.com/shirou/gopsutil/process"
 )
 
 // busyCpu

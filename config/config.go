@@ -55,6 +55,7 @@ type Config struct {
 	CmdbLevelMaxLength int    `config:"cmdb_level_max_length"`
 	IgnoreCmdbLevel    bool   `config:"ignore_cmdb_level"`
 	MustHostIDExist    bool   `config:"must_host_id_exist"`
+	CheckDiff          bool   `config:"check_diff"`
 }
 
 // 从配置目录

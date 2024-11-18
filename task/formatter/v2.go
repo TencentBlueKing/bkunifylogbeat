@@ -26,8 +26,9 @@ package formatter
 
 import (
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
-	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/elastic/beats/filebeat/util"
+
+	"github.com/TencentBlueKing/bkunifylogbeat/config"
 )
 
 type v2Formatter struct {

@@ -27,8 +27,9 @@ import (
 	"time"
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
-	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/dustin/go-humanize"
+
+	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
 )
 
 // 如果未配置close_inactive则直接默认为5分钟

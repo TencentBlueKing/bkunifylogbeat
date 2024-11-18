@@ -24,14 +24,15 @@ package formatter
 
 import (
 	"fmt"
-	"github.com/golang/groupcache/lru"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
-	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/elastic/beats/filebeat/util"
+	"github.com/golang/groupcache/lru"
+
+	"github.com/TencentBlueKing/bkunifylogbeat/config"
 )
 
 // Formatter 采集器事件包格式化接口, 根据任务配置返回相应的格式

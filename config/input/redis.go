@@ -24,6 +24,7 @@ package input
 
 import (
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
+
 	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
 )
 
