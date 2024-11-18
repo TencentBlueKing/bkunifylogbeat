@@ -23,17 +23,16 @@
 package wineventlog
 
 import (
-	"github.com/elastic/beats/filebeat/channel"
-	"github.com/elastic/beats/filebeat/input/file"
-	"github.com/elastic/beats/filebeat/util"
 	"strconv"
 	"time"
 
+	"github.com/elastic/beats/filebeat/channel"
+	"github.com/elastic/beats/filebeat/input/file"
+	"github.com/elastic/beats/filebeat/util"
 	"github.com/elastic/beats/libbeat/beat"
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/libbeat/logp"
 	"github.com/elastic/beats/libbeat/processors"
-
 	"github.com/elastic/beats/winlogbeat/checkpoint"
 	"github.com/elastic/beats/winlogbeat/eventlog"
 )

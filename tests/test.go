@@ -25,10 +25,11 @@ package tests
 import (
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	bkmonitoring "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/monitoring"
-	"github.com/TencentBlueKing/bkunifylogbeat/config"
-	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
 	"github.com/elastic/beats/filebeat/input/file"
 	"github.com/elastic/beats/filebeat/util"
+
+	"github.com/TencentBlueKing/bkunifylogbeat/config"
+	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
 )
 
 // MockLogEvent 生成日志采集事件

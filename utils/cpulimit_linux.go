@@ -27,14 +27,15 @@ package utils
 
 import (
 	"bytes"
-	"github.com/shirou/gopsutil/cpu"
-	"github.com/shirou/gopsutil/process"
-	"github.com/tklauser/go-sysconf"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/shirou/gopsutil/cpu"
+	"github.com/shirou/gopsutil/process"
+	"github.com/tklauser/go-sysconf"
 )
 
 var ClockTicks = 100 // default value

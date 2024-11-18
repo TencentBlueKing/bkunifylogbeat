@@ -30,10 +30,11 @@ import (
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	bkmonitoring "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/monitoring"
+	"github.com/elastic/beats/filebeat/util"
+
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/formatter"
-	"github.com/elastic/beats/filebeat/util"
 )
 
 var (

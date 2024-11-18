@@ -28,9 +28,10 @@ import (
 	"strings"
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
+	"github.com/elastic/beats/filebeat/util"
+
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/utils"
-	"github.com/elastic/beats/filebeat/util"
 )
 
 type v1Formatter struct {

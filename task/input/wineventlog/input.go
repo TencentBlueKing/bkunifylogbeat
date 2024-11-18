@@ -24,6 +24,8 @@ package wineventlog
 
 import (
 	"fmt"
+	"sync"
+
 	"github.com/elastic/beats/filebeat/channel"
 	"github.com/elastic/beats/filebeat/harvester"
 	"github.com/elastic/beats/filebeat/input"
@@ -32,7 +34,6 @@ import (
 	"github.com/elastic/beats/libbeat/logp"
 	"github.com/elastic/beats/winlogbeat/checkpoint"
 	"github.com/elastic/beats/winlogbeat/eventlog"
-	"sync"
 )
 
 func init() {

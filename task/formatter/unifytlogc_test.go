@@ -26,12 +26,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/elastic/beats/filebeat/input/file"
 	"github.com/elastic/beats/filebeat/util"
 	"github.com/elastic/beats/libbeat/beat"
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/TencentBlueKing/bkunifylogbeat/config"
 )
 
 func BaseFormatter(t *testing.T, taskConfig *config.TaskConfig) {

@@ -28,12 +28,13 @@ import (
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	bkmonitoring "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/monitoring"
-	"github.com/TencentBlueKing/bkunifylogbeat/config"
-	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
-	"github.com/TencentBlueKing/bkunifylogbeat/task/sender"
 	"github.com/elastic/beats/filebeat/util"
 	"github.com/elastic/beats/libbeat/beat"
 	process "github.com/elastic/beats/libbeat/processors"
+
+	"github.com/TencentBlueKing/bkunifylogbeat/config"
+	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
+	"github.com/TencentBlueKing/bkunifylogbeat/task/sender"
 )
 
 var (

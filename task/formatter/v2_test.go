@@ -23,15 +23,17 @@
 package formatter
 
 import (
+	"testing"
+	"time"
+
 	beats "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
-	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/elastic/beats/filebeat/input/file"
 	"github.com/elastic/beats/filebeat/util"
 	"github.com/elastic/beats/libbeat/beat"
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/stretchr/testify/assert"
-	"testing"
-	"time"
+
+	"github.com/TencentBlueKing/bkunifylogbeat/config"
 )
 
 func TestV2Formatter(t *testing.T) {

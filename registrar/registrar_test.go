@@ -30,11 +30,12 @@ import (
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	bkStorage "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/storage"
-	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
-	"github.com/TencentBlueKing/bkunifylogbeat/tests"
 	"github.com/elastic/beats/filebeat/input/file"
 	libbeatlogp "github.com/elastic/beats/libbeat/logp"
 	"github.com/stretchr/testify/assert"
+
+	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
+	"github.com/TencentBlueKing/bkunifylogbeat/tests"
 )
 
 func init() {

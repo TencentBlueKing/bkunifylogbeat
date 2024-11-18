@@ -23,8 +23,9 @@
 package formatter
 
 import (
-	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"testing"
+
+	"github.com/TencentBlueKing/bkunifylogbeat/config"
 )
 
 func TestNewTQOSFormatter(t *testing.T) {

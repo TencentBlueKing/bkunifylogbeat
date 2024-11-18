@@ -27,10 +27,11 @@ import (
 	"os"
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
-	"github.com/TencentBlueKing/bkunifylogbeat/beater"
-	_ "github.com/TencentBlueKing/bkunifylogbeat/json"
 	"github.com/elastic/beats/libbeat/cmd/instance"
 	"github.com/elastic/beats/libbeat/publisher/processing"
+
+	"github.com/TencentBlueKing/bkunifylogbeat/beater"
+	_ "github.com/TencentBlueKing/bkunifylogbeat/json"
 )
 
 var (

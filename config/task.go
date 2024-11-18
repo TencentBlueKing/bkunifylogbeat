@@ -33,9 +33,10 @@ import (
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
-	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/libbeat/processors"
+
+	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 )
 
 // ConditionConfig : 用于条件表达式，目前支持=、!=、eq、neq、include、exclude、regex、nregex

@@ -33,11 +33,12 @@ import (
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	bkmonitoring "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/monitoring"
 	bkStorage "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/storage"
-	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
-	"github.com/TencentBlueKing/bkunifylogbeat/task/input/wineventlog"
 	"github.com/elastic/beats/filebeat/input/file"
 	commonFile "github.com/elastic/beats/libbeat/common/file"
 	"github.com/elastic/beats/libbeat/monitoring"
+
+	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
+	"github.com/TencentBlueKing/bkunifylogbeat/task/input/wineventlog"
 )
 
 const (

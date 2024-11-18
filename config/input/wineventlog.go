@@ -23,10 +23,12 @@
 package input
 
 import (
-	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
-	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
-	"github.com/elastic/beats/libbeat/common"
 	"time"
+
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
+	"github.com/elastic/beats/libbeat/common"
+
+	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
 )
 
 // WinEventLogConfig window event log collect config

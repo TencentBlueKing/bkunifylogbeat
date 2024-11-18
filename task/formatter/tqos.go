@@ -28,10 +28,11 @@ import (
 	"fmt"
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
-	"github.com/TencentBlueKing/bkunifylogbeat/config"
-	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 	"github.com/elastic/beats/filebeat/util"
 	"github.com/golang/groupcache/lru"
+
+	"github.com/TencentBlueKing/bkunifylogbeat/config"
+	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 )
 
 // TQOSLogConfig 如果未配置close_inactive则直接默认为5分钟

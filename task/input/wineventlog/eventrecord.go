@@ -25,15 +25,16 @@ package wineventlog
 import (
 	"expvar"
 	"fmt"
+	"reflect"
+	"strconv"
+	"strings"
+	"syscall"
+
 	"github.com/elastic/beats/libbeat/beat"
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/libbeat/logp"
 	"github.com/elastic/beats/winlogbeat/eventlog"
 	"github.com/elastic/beats/winlogbeat/sys"
-	"reflect"
-	"strconv"
-	"strings"
-	"syscall"
 )
 
 // ToEvent ToMapStr returns a new MapStr containing the data from this Record.

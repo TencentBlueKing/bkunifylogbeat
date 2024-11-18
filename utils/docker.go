@@ -25,11 +25,12 @@ package utils
 import (
 	"bufio"
 	"bytes"
-	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	"io/ioutil"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 )
 
 type mount struct {

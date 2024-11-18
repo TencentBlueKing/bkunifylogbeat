@@ -26,6 +26,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+
 	"github.com/elastic/beats/libbeat/common"
 )
 

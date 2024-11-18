@@ -30,24 +30,25 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/TencentBlueKing/bkunifylogbeat/utils"
+	"github.com/elastic/beats/libbeat/common"
 	"time"
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/output/gse"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/utils/host"
-	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
-	// 加载 Filebeat Input插件及配置优化模块
-	_ "github.com/TencentBlueKing/bkunifylogbeat/include"
-	"github.com/TencentBlueKing/bkunifylogbeat/registrar"
+	"github.com/elastic/beats/libbeat/cfgfile"
 	"github.com/pkg/errors"
 
-	"github.com/elastic/beats/libbeat/cfgfile"
+	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
+	_ "github.com/TencentBlueKing/bkunifylogbeat/include" // 加载 Filebeat Input插件及配置优化模块
+	"github.com/TencentBlueKing/bkunifylogbeat/registrar"
+	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 )
 
 var Registrar *registrar.Registrar
-var lastTaskHash string
+
+const beatName = "bkunifylogbeat"
 
 // LogBeat  package cadvisor
 type LogBeat struct {
@@ -58,7 +59,8 @@ type LogBeat struct {
 
 	hostIDWatcher host.Watcher
 
-	isReload bool
+	isReload     bool
+	lastTaskHash string
 }
 
 // New create cadvisor beat
@@ -124,6 +126,7 @@ func (bt *LogBeat) Run() error {
 
 	reloadTicker := time.NewTicker(10 * time.Second)
 	diffTaskTicker := time.NewTicker(60 * time.Second)
+	defer diffTaskTicker.Stop()
 	defer reloadTicker.Stop()
 	for {
 		select {
@@ -132,14 +135,22 @@ func (bt *LogBeat) Run() error {
 			if bt.isReload {
 				bt.isReload = false
 				config := beat.GetConfig()
+				if bt.config.CheckDiff {
+					config, err = GetRawConfig()
+					if err != nil {
+						logp.L.Error(err)
+					}
+				}
 				if config != nil {
 					bt.Reload(config)
 				}
 			}
 		// 处理采集器主配置是否变更，变更则发送重加载信号
 		case <-diffTaskTicker.C:
-			if err = bt.checkNeedReload(); err != nil {
-				logp.L.Error(err)
+			if bt.config.CheckDiff {
+				if err = bt.checkDiffReload(); err != nil {
+					logp.L.Error(err)
+				}
 			}
 		case <-beat.ReloadChan:
 			bt.isReload = true
@@ -159,17 +170,28 @@ func (bt *LogBeat) Stop() {
 	close(bt.done)
 }
 
-// Main config diff check
-func (bt *LogBeat) checkNeedReload() error {
+// GetRawConfig Get raw main config
+func GetRawConfig() (*common.Config, error) {
 	rawConfig, err := cfgfile.Load("", nil)
 	if err != nil {
-		return err
-	}
-	if !rawConfig.HasField("bkunifylogbeat") {
-		return errors.New("no bkunifylogbeat field found")
+		return nil, err
 	}
 
-	beatConfig, err := rawConfig.Child("bkunifylogbeat", -1)
+	if !rawConfig.HasField(beatName) {
+		return nil, errors.New("no beat name field found")
+	}
+
+	beatConfig, err := rawConfig.Child(beatName, -1)
+	if err != nil {
+		return nil, err
+	}
+
+	return beatConfig, nil
+}
+
+// Main config diff check
+func (bt *LogBeat) checkDiffReload() error {
+	beatConfig, err := GetRawConfig()
 	if err != nil {
 		return err
 	}
@@ -183,11 +205,11 @@ func (bt *LogBeat) checkNeedReload() error {
 	}
 
 	currentTaskHash := utils.Md5(string(b))
-	if len(lastTaskHash) == 0 {
-		lastTaskHash = currentTaskHash
+	if len(bt.lastTaskHash) == 0 {
+		bt.lastTaskHash = currentTaskHash
 	}
-	if lastTaskHash != currentTaskHash {
-		lastTaskHash = currentTaskHash
+	if bt.lastTaskHash != currentTaskHash {
+		bt.lastTaskHash = currentTaskHash
 		bt.Reload(beatConfig)
 		logp.L.Info("Reload main config task.")
 	}

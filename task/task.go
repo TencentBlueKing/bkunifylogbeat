@@ -30,11 +30,12 @@ import (
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	bkmonitoring "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/monitoring"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/output/bkpipe_multi"
+	"github.com/elastic/beats/filebeat/input/file"
+	"github.com/elastic/beats/libbeat/outputs"
+
 	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/input"
-	"github.com/elastic/beats/filebeat/input/file"
-	"github.com/elastic/beats/libbeat/outputs"
 )
 
 // Task 采集任务具体实现，负责filebeat采集事件处理、过滤、打包，并发送到采集框架

@@ -24,10 +24,11 @@ package base
 
 import (
 	"fmt"
+	"sync"
+
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	bkmonitoring "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/monitoring"
 	"github.com/elastic/beats/libbeat/monitoring"
-	"sync"
 )
 
 var (

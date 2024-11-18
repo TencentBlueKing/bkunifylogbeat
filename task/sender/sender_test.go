@@ -23,18 +23,19 @@
 package sender
 
 import (
-	"github.com/TencentBlueKing/bkunifylogbeat/task/formatter"
 	"testing"
 	"time"
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
-	"github.com/TencentBlueKing/bkunifylogbeat/config"
-	"github.com/TencentBlueKing/bkunifylogbeat/tests"
 	"github.com/elastic/beats/filebeat/util"
 	"github.com/elastic/beats/libbeat/common"
 	libbeatlogp "github.com/elastic/beats/libbeat/logp"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/TencentBlueKing/bkunifylogbeat/config"
+	"github.com/TencentBlueKing/bkunifylogbeat/task/formatter"
+	"github.com/TencentBlueKing/bkunifylogbeat/tests"
 )
 
 func init() {

@@ -23,11 +23,12 @@
 package filter
 
 import (
+	"testing"
+	"time"
+
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	libbeatlogp "github.com/elastic/beats/libbeat/logp"
-	"testing"
-	"time"
 
 	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/tests"
