@@ -30,7 +30,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/elastic/beats/libbeat/common"
 	"time"
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
@@ -38,6 +37,7 @@ import (
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/output/gse"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/utils/host"
 	"github.com/elastic/beats/libbeat/cfgfile"
+	"github.com/elastic/beats/libbeat/common"
 	"github.com/pkg/errors"
 
 	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
