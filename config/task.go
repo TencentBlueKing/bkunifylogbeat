@@ -92,6 +92,12 @@ type SenderConfig struct {
 	OutputFormat     string `config:"output_format"`      // 输出格式，为了兼容老版采集器的输出格式
 }
 
+func metaKeyToField(key string) string {
+	metaKey := strings.ReplaceAll(key, "/", "_")
+	metaKey = strings.ReplaceAll(metaKey, ".", "_")
+	return strings.ReplaceAll(metaKey, "-", "_")
+}
+
 func loadMetaFile(p string) map[string]string {
 	b, err := os.ReadFile(p)
 	if err != nil {
@@ -108,7 +114,8 @@ func loadMetaFile(p string) map[string]string {
 		}
 
 		v := strings.Trim(strings.TrimSpace(parts[1]), `"`)
-		meta[strings.TrimSpace(parts[0])] = v
+		k := metaKeyToField(strings.TrimSpace(parts[0]))
+		meta[k] = v
 	}
 	return meta
 }
