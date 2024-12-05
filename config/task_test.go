@@ -58,6 +58,7 @@ k2="v2"
 k3 = "v3"
 k4= "v4"
 k5= "v5=foo"
+k5.test/gt-hh= "test"
 #
 foobar
 `)
@@ -67,11 +68,12 @@ foobar
 
 	meta := loadMetaFile(f.Name())
 	excepted := map[string]string{
-		"k1": "v1",
-		"k2": "v2",
-		"k3": "v3",
-		"k4": "v4",
-		"k5": "v5=foo",
+		"k1":            "v1",
+		"k2":            "v2",
+		"k3":            "v3",
+		"k4":            "v4",
+		"k5":            "v5=foo",
+		"k5_test_gt_hh": "test",
 	}
 
 	assert.Equal(t, excepted, meta)
