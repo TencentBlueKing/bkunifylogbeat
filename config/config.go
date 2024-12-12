@@ -56,6 +56,7 @@ type Config struct {
 	IgnoreCmdbLevel    bool   `config:"ignore_cmdb_level"`
 	MustHostIDExist    bool   `config:"must_host_id_exist"`
 	CheckDiff          bool   `config:"check_diff"`
+	WindowsReloadPath  string `config:"windows_reload_path"`
 }
 
 // 从配置目录
