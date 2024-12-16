@@ -207,9 +207,6 @@ func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
 					condition.Op = opInclude
 				}
 
-				// 去除字符串首尾空白字符
-				condition.Key = strings.TrimSpace(condition.Key)
-
 				// 初始化条件匹配方法 Matcher
 				matcher, err := getOperationFunc(condition.Op, condition.Key)
 
