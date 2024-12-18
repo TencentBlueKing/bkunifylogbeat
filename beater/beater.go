@@ -115,6 +115,9 @@ func (bt *LogBeat) windowsReload() {
 	checkFunc := func() error {
 		fileInfo, err := os.Stat(bt.config.WindowsReloadPath)
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
 			return err
 		}
 
