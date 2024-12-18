@@ -1,6 +1,6 @@
 module github.com/TencentBlueKing/bkunifylogbeat
 
-go 1.19
+go 1.22.6
 
 require (
 	github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse v0.0.0-00010101000000-000000000000
