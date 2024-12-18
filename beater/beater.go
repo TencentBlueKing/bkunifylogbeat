@@ -30,6 +30,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"runtime"
 	"time"
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
@@ -104,6 +106,44 @@ func (bt *LogBeat) PublishEvent(event beat.MapStr) bool {
 	return beat.Send(event)
 }
 
+func (bt *LogBeat) windowsReload() {
+	if !beat.IsContainerMode() {
+		return
+	}
+
+	var modTime time.Time
+	checkFunc := func() error {
+		fileInfo, err := os.Stat(bt.config.WindowsReloadPath)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+
+		if fileInfo.ModTime() != modTime {
+			select {
+			case beat.ReloadChan <- true:
+			default:
+			}
+		}
+		modTime = fileInfo.ModTime()
+		return nil
+	}
+
+	ticker := time.NewTicker(time.Second * 10)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if err := checkFunc(); err != nil {
+				logp.L.Errorf("failed to check windows reload path: %s", err)
+			}
+		}
+	}
+}
+
 // Run beater interface
 func (bt *LogBeat) Run() error {
 	logp.L.Infof("logbeat is running! Hit CTRL-C to stop it.")
@@ -120,8 +160,12 @@ func (bt *LogBeat) Run() error {
 	}
 	defer Registrar.Stop()
 
-	if err := bt.manager.Start(); nil != err {
+	if err := bt.manager.Start(); err != nil {
 		logp.L.Error("failed to start manager ")
+	}
+
+	if runtime.GOOS == "windows" {
+		go bt.windowsReload()
 	}
 
 	reloadTicker := time.NewTicker(10 * time.Second)
