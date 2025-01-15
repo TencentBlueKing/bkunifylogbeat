@@ -64,7 +64,7 @@ func init() {
 		"symlinks":   true,
 
 		// 不再限制单行大小
-		"max_bytes": 100 * humanize.MiByte,
+		"max_bytes": 1 * humanize.MiByte,
 
 		// 打开后，采集速率直接起飞
 		"ludicrous_mode": true,
