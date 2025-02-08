@@ -56,7 +56,7 @@ func init() {
 		"clean_removed": true,
 
 		// 监听文件变更时间
-		"ignore_older": 168 * time.Hour,
+		"ignore_older": 24 * time.Hour,
 
 		// harvester
 		"tail_files": true,
@@ -90,7 +90,7 @@ func init() {
 		// 特殊配置处理
 		logConfig := &LogConfig{
 			CloseInactive: 5 * time.Minute,
-			IgnoreOlder:   168 * time.Hour,
+			IgnoreOlder:   24 * time.Hour,
 		}
 		err = rawConfig.Unpack(&logConfig)
 		if err != nil {
