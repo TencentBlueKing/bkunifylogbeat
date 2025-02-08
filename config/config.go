@@ -45,6 +45,7 @@ type Config struct {
 
 	// SecConfigs sec config path and pattern
 	SecConfigs []SecConfigItem `config:"multi_config"`
+	Seccomp    Seccomp         `config:"seccomp"`
 
 	// Tasks 允许加载子配置采集项
 	Tasks []interface{} `config:"tasks"`
@@ -63,6 +64,11 @@ type Config struct {
 type SecConfigItem struct {
 	Path    string `config:"path"`
 	Pattern string `config:"file_pattern"`
+}
+
+// 系统调用配置
+type Seccomp struct {
+	Enable bool `config:"enable"`
 }
 
 // 采集状态
@@ -103,6 +109,9 @@ func Parse(cfg *beat.Config) (Config, error) {
 		Registry: Registry{
 			FlushTimeout: 1 * time.Second,
 			GcFrequency:  1 * time.Minute,
+		},
+		Seccomp: Seccomp{
+			Enable: false,
 		},
 	}
 	err := cfg.Unpack(&config)
