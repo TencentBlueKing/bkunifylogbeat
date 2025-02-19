@@ -25,10 +25,9 @@
 package formatter
 
 import (
-	"strings"
-
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/elastic/beats/filebeat/util"
+	"strings"
 
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/utils"
@@ -54,6 +53,19 @@ func (f v1Formatter) GetTaskConfig() *config.TaskConfig {
 	return f.taskConfig
 }
 
+func GetOriginFileName(fileName string, pathPrefix string, mountInfo map[string]string) string {
+	// 使用前缀进行路径还原
+	fileName = strings.TrimPrefix(fileName, pathPrefix)
+	// 如果失败，使用挂载路径进行还原
+	for hostPath, containerPath := range mountInfo {
+		if strings.HasPrefix(fileName, hostPath) {
+			fileName = strings.Replace(fileName, hostPath, containerPath, 1)
+			break
+		}
+	}
+	return fileName
+}
+
 func prepareData(f commonFormatter, events []*util.Data) beat.MapStr {
 	var (
 		datetime, utcTime string
@@ -64,7 +76,7 @@ func prepareData(f commonFormatter, events []*util.Data) beat.MapStr {
 	lastState := events[len(events)-1].GetState()
 	filename := lastState.Source
 	if len(f.GetTaskConfig().RemovePathPrefix) > 0 {
-		filename = strings.TrimPrefix(filename, f.GetTaskConfig().RemovePathPrefix)
+		filename = GetOriginFileName(filename, f.GetTaskConfig().RemovePathPrefix, f.GetTaskConfig().MountInfo)
 	}
 	data := beat.MapStr{
 		"dataid":   f.GetTaskConfig().DataID,
