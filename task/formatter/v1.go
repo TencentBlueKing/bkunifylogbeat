@@ -27,6 +27,7 @@ package formatter
 import (
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/elastic/beats/filebeat/util"
+	"sort"
 	"strings"
 
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
@@ -56,13 +57,36 @@ func (f v1Formatter) GetTaskConfig() *config.TaskConfig {
 func GetOriginFileName(fileName string, pathPrefix string, mountInfo map[string]string) string {
 	// 使用前缀进行路径还原
 	fileName = strings.TrimPrefix(fileName, pathPrefix)
-	// 如果失败，使用挂载路径进行还原
-	for hostPath, containerPath := range mountInfo {
+
+	// 提取 hostPaths
+	var hostPaths []string
+	for hostPath := range mountInfo {
+		hostPaths = append(hostPaths, hostPath)
+	}
+
+	// 按照路径层级的数量排序，层级越多的路径会越先处理
+	sort.Slice(hostPaths, func(i, j int) bool {
+		return strings.Count(hostPaths[i], "/") > strings.Count(hostPaths[j], "/")
+	})
+
+	// 按照排序后的顺序处理 hostPath
+	for _, hostPath := range hostPaths {
+		containerPath := mountInfo[hostPath]
 		if strings.HasPrefix(fileName, hostPath) {
 			fileName = strings.Replace(fileName, hostPath, containerPath, 1)
 			break
 		}
 	}
+
+	// 如果失败，使用挂载路径进行还原
+	for _, hostPath := range hostPaths {
+		containerPath := mountInfo[hostPath]
+		if strings.HasPrefix(fileName, hostPath) {
+			fileName = strings.Replace(fileName, hostPath, containerPath, 1)
+			break
+		}
+	}
+
 	return fileName
 }
 
