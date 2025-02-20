@@ -27,6 +27,7 @@ package formatter
 import (
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/elastic/beats/filebeat/util"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -66,7 +67,7 @@ func GetOriginFileName(fileName string, pathPrefix string, mountInfo map[string]
 
 	// 按照路径层级的数量排序，层级越多的路径会越先处理
 	sort.Slice(hostPaths, func(i, j int) bool {
-		return strings.Count(hostPaths[i], "/") > strings.Count(hostPaths[j], "/")
+		return strings.Count(hostPaths[i], string(filepath.Separator)) > strings.Count(hostPaths[j], string(filepath.Separator))
 	})
 
 	// 按照排序后的顺序处理 hostPath
