@@ -70,15 +70,6 @@ func GetOriginFileName(fileName string, pathPrefix string, mountInfo map[string]
 		return strings.Count(hostPaths[i], string(filepath.Separator)) > strings.Count(hostPaths[j], string(filepath.Separator))
 	})
 
-	// 按照排序后的顺序处理 hostPath
-	for _, hostPath := range hostPaths {
-		containerPath := mountInfo[hostPath]
-		if strings.HasPrefix(fileName, hostPath) {
-			fileName = strings.Replace(fileName, hostPath, containerPath, 1)
-			break
-		}
-	}
-
 	// 如果失败，使用挂载路径进行还原
 	for _, hostPath := range hostPaths {
 		containerPath := mountInfo[hostPath]
