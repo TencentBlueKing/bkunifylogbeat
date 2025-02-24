@@ -55,14 +55,16 @@ func (f v1Formatter) GetTaskConfig() *config.TaskConfig {
 	return f.taskConfig
 }
 
-func GetOriginFileName(fileName string, pathPrefix string, mountInfo map[string]string) string {
+func GetOriginFileName(fileName string, pathPrefix string, mountInfos []config.MountInfo) string {
 	// 使用前缀进行路径还原
 	fileName = strings.TrimPrefix(fileName, pathPrefix)
 
-	// 提取 hostPaths
-	var hostPaths []string
-	for hostPath := range mountInfo {
-		hostPaths = append(hostPaths, hostPath)
+	// 提取 hostPaths 并创建一个映射到 containerPath 的映射
+	hostPaths := make([]string, 0, len(mountInfos))
+	mountMap := make(map[string]string, len(mountInfos))
+	for _, mountInfo := range mountInfos {
+		hostPaths = append(hostPaths, mountInfo.Source)
+		mountMap[mountInfo.Source] = mountInfo.Dest
 	}
 
 	// 按照路径层级的数量排序，层级越多的路径会越先处理
@@ -72,7 +74,7 @@ func GetOriginFileName(fileName string, pathPrefix string, mountInfo map[string]
 
 	// 如果失败，使用挂载路径进行还原
 	for _, hostPath := range hostPaths {
-		containerPath := mountInfo[hostPath]
+		containerPath := mountMap[hostPath]
 		if strings.HasPrefix(fileName, hostPath) {
 			fileName = strings.Replace(fileName, hostPath, containerPath, 1)
 			break
@@ -81,7 +83,6 @@ func GetOriginFileName(fileName string, pathPrefix string, mountInfo map[string]
 
 	return fileName
 }
-
 func prepareData(f commonFormatter, events []*util.Data) beat.MapStr {
 	var (
 		datetime, utcTime string
@@ -92,7 +93,7 @@ func prepareData(f commonFormatter, events []*util.Data) beat.MapStr {
 	lastState := events[len(events)-1].GetState()
 	filename := lastState.Source
 	if len(f.GetTaskConfig().RemovePathPrefix) > 0 {
-		filename = GetOriginFileName(filename, f.GetTaskConfig().RemovePathPrefix, f.GetTaskConfig().MountInfo)
+		filename = GetOriginFileName(filename, f.GetTaskConfig().RemovePathPrefix, f.GetTaskConfig().MountInfos)
 	}
 	data := beat.MapStr{
 		"dataid":   f.GetTaskConfig().DataID,

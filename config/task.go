@@ -56,6 +56,11 @@ type FilterConfig struct {
 	Conditions []ConditionConfig `config:"conditions"`
 }
 
+type MountInfo struct {
+	Source string `yaml:"source"`
+	Dest   string `yaml:"dest"`
+}
+
 // ConditionSortByIndex condition配置
 type ConditionSortByIndex []ConditionConfig
 
@@ -88,9 +93,9 @@ type SenderConfig struct {
 	ExtMetaEnv   map[string]string      `config:"ext_meta_env"`
 
 	// Output
-	RemovePathPrefix string            `config:"remove_path_prefix"` // 去除路径前缀
-	MountInfo        map[string]string `config:"mount_info"`         // 挂载路径信息
-	OutputFormat     string            `config:"output_format"`      // 输出格式，为了兼容老版采集器的输出格式
+	RemovePathPrefix string      `config:"remove_path_prefix"` // 去除路径前缀
+	MountInfos       []MountInfo `config:"mount_infos"`        // 挂载路径信息
+	OutputFormat     string      `config:"output_format"`      // 输出格式，为了兼容老版采集器的输出格式
 }
 
 func metaKeyToField(key string) string {
