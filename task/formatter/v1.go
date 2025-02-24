@@ -27,8 +27,6 @@ package formatter
 import (
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/elastic/beats/filebeat/util"
-	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
@@ -55,22 +53,9 @@ func (f v1Formatter) GetTaskConfig() *config.TaskConfig {
 	return f.taskConfig
 }
 
-func GetOriginFileName(fileName string, pathPrefix string, mountInfos []config.MountInfo) string {
+func GetOriginFileName(fileName string, pathPrefix string, mountMap map[string]string, hostPaths []string) string {
 	// 使用前缀进行路径还原
 	fileName = strings.TrimPrefix(fileName, pathPrefix)
-
-	// 提取 hostPaths 并创建一个映射到 containerPath 的映射
-	hostPaths := make([]string, 0, len(mountInfos))
-	mountMap := make(map[string]string, len(mountInfos))
-	for _, mountInfo := range mountInfos {
-		hostPaths = append(hostPaths, mountInfo.Source)
-		mountMap[mountInfo.Source] = mountInfo.Dest
-	}
-
-	// 按照路径层级的数量排序，层级越多的路径会越先处理
-	sort.Slice(hostPaths, func(i, j int) bool {
-		return strings.Count(hostPaths[i], string(filepath.Separator)) > strings.Count(hostPaths[j], string(filepath.Separator))
-	})
 
 	// 如果失败，使用挂载路径进行还原
 	for _, hostPath := range hostPaths {
@@ -93,7 +78,8 @@ func prepareData(f commonFormatter, events []*util.Data) beat.MapStr {
 	lastState := events[len(events)-1].GetState()
 	filename := lastState.Source
 	if len(f.GetTaskConfig().RemovePathPrefix) > 0 {
-		filename = GetOriginFileName(filename, f.GetTaskConfig().RemovePathPrefix, f.GetTaskConfig().MountInfos)
+		filename = GetOriginFileName(filename, f.GetTaskConfig().RemovePathPrefix,
+			f.GetTaskConfig().MountMap, f.GetTaskConfig().MountHostPaths)
 	}
 	data := beat.MapStr{
 		"dataid":   f.GetTaskConfig().DataID,
