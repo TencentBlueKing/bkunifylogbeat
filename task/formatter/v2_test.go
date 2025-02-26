@@ -104,3 +104,49 @@ func TestV2Formatter_Multi(t *testing.T) {
 
 	assert.Equal(t, data["items"].([]LineItem)[1].Data, event.Event.Texts[1])
 }
+
+func TestV2FormatterMountReplace(t *testing.T) {
+	vars := map[string]interface{}{
+		"dataid":          "999990001",
+		"harvester_limit": 10,
+		"mounts": []config.Mount{
+			{"/var/lib/kubelet/pods/ab7e4dcd-4c93-4f01-8ebd-fb7bcc293bd9/volumes/kubernetes.io~csi/pvc-38265a73-baa1-4249-879b-af4bbc30a7ba/mount/sub", "/data/datahub/backup"},
+			{"/var/lib/kubelet/pods/ab7e4dcd-4c93-4f01-8ebd-fb7bcc293bd9/volumes/kubernetes.io~csi/pvc-38265a73-baa1-4249-879b-af4bbc30a7ba/mount", "/data/datahub/backup/deeper"},
+			{"/data/bcs/service/docker/overlay2/1780a6fb393c8462d50edd775f0f7c89bf0769c2ede03259e190a8ad2007043c/merged", ""},
+			{"/test/sub/mount", "/mount"},
+		},
+		"remove_path_prefix": "/var/host",
+		"is_container_std":   true,
+	}
+	taskConfig, err := config.CreateTaskConfig(vars)
+	if err != nil {
+		panic(err)
+	}
+	f, err := NewV2Formatter(taskConfig)
+	if err != nil {
+		panic(err)
+	}
+
+	event := &util.Data{
+		Event: beat.Event{
+			Timestamp: time.Now(),
+			Fields: common.MapStr{
+				"data":     "Hello from the Kubernetes cluster",
+				"stream":   "stdout",
+				"log_time": "2021-11-16T07:44:40.609753191Z",
+			},
+		},
+	}
+	event.SetState(file.State{Source: "/var/host/data/bcs/service/docker/overlay2/1780a6fb393c8462d50edd775f0f7c89bf0769c2ede03259e190a8ad2007043c/merged/data/datahub/udp/backup/a/b/c.log"})
+
+	data := f.Format([]*util.Data{event})
+
+	assert.Equal(t, data["filename"], "/data/datahub/udp/backup/a/b/c.log")
+
+	event.SetState(file.State{Source: "/var/host/var/lib/kubelet/pods/ab7e4dcd-4c93-4f01-8ebd-fb7bcc293bd9/volumes/kubernetes.io~csi/pvc-38265a73-baa1-4249-879b-af4bbc30a7ba/mount/d/e/f.log"})
+
+	data = f.Format([]*util.Data{event})
+
+	assert.Equal(t, data["filename"], "/data/datahub/backup/deeper/d/e/f.log")
+
+}
