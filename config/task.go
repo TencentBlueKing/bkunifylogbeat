@@ -247,9 +247,9 @@ func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
 		mountMap[mount.HostPath] = mount.ContainerPath
 	}
 
-	// 按照路径层级的数量排序，层级越多的路径会越先处理
+	// 按照container path层级的数量排序host path，层级越多的路径会越先处理
 	sort.Slice(hostPaths, func(i, j int) bool {
-		return strings.Count(hostPaths[i], string(filepath.Separator)) > strings.Count(hostPaths[j], string(filepath.Separator))
+		return strings.Count(mountMap[hostPaths[i]], string(filepath.Separator)) > strings.Count(mountMap[hostPaths[j]], string(filepath.Separator))
 	})
 
 	config.MountHostPaths = hostPaths
