@@ -56,6 +56,12 @@ type FilterConfig struct {
 	Conditions []ConditionConfig `config:"conditions"`
 }
 
+// Mount 挂载配置
+type Mount struct {
+	HostPath      string
+	ContainerPath string
+}
+
 // ConditionSortByIndex condition配置
 type ConditionSortByIndex []ConditionConfig
 
@@ -88,8 +94,11 @@ type SenderConfig struct {
 	ExtMetaEnv   map[string]string      `config:"ext_meta_env"`
 
 	// Output
-	RemovePathPrefix string `config:"remove_path_prefix"` // 去除路径前缀
-	OutputFormat     string `config:"output_format"`      // 输出格式，为了兼容老版采集器的输出格式
+	RemovePathPrefix string            `config:"remove_path_prefix"` // 去除路径前缀
+	Mounts           []Mount           `config:"mounts"`             // 挂载路径信息
+	MountMap         map[string]string // 挂载路径映射
+	MountHostPaths   []string          // 挂载主机排序列表
+	OutputFormat     string            `config:"output_format"` // 输出格式，为了兼容老版采集器的输出格式
 }
 
 func metaKeyToField(key string) string {
@@ -230,7 +239,23 @@ func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
 		}
 	}
 
-	//根据任务配置获取hash值
+	// 提取 hostPaths 并创建一个映射到 containerPath 的映射
+	hostPaths := make([]string, 0, len(config.Mounts))
+	mountMap := make(map[string]string, len(config.Mounts))
+	for _, mount := range config.Mounts {
+		hostPaths = append(hostPaths, mount.HostPath)
+		mountMap[mount.HostPath] = mount.ContainerPath
+	}
+
+	// 按照container path层级的数量排序host path，层级越多的路径会越先处理
+	sort.Slice(hostPaths, func(i, j int) bool {
+		return strings.Count(mountMap[hostPaths[i]], string(filepath.Separator)) > strings.Count(mountMap[hostPaths[j]], string(filepath.Separator))
+	})
+
+	config.MountHostPaths = hostPaths
+	config.MountMap = mountMap
+
+	// 根据任务配置获取hash值
 	err, config.ID = utils.HashRawConfig(config.RawConfig)
 	if err != nil {
 		return nil, err
