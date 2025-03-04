@@ -96,9 +96,9 @@ type SenderConfig struct {
 	// Output
 	RemovePathPrefix string            `config:"remove_path_prefix"` // 去除路径前缀
 	Mounts           []Mount           `config:"mounts"`             // 挂载路径信息
-	MountMap         map[string]string `config:"mount_map"`          // 挂载路径映射
-	MountHostPaths   []string          `config:"mount_host_paths"`   // 挂载主机排序列表
-	OutputFormat     string            `config:"output_format"`      // 输出格式，为了兼容老版采集器的输出格式
+	MountMap         map[string]string // 挂载路径映射
+	MountHostPaths   []string          // 挂载主机排序列表
+	OutputFormat     string            `config:"output_format"` // 输出格式，为了兼容老版采集器的输出格式
 }
 
 func metaKeyToField(key string) string {
