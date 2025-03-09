@@ -20,6 +20,7 @@ require (
 	github.com/StackExchange/wmi v1.2.1 // indirect
 	github.com/andrewkroh/sys v0.0.0-20151128191922-287798fe3e43 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/bmatcuk/doublestar/v4 v4.8.1 // indirect
 	github.com/boltdb/bolt v1.3.1 // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
@@ -115,5 +116,5 @@ replace (
 	github.com/Sirupsen/logrus v1.6.0 => github.com/sirupsen/logrus v1.6.0
 	github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse => ../bkmonitor-datalink/pkg/libgse
 	github.com/TencentBlueKing/bkmonitor-datalink/pkg/utils => ../bkmonitor-datalink/pkg/utils
-	github.com/elastic/beats v7.1.1+incompatible => github.com/TencentBlueking/beats v7.1.43-bk+incompatible
+	github.com/elastic/beats v7.1.1+incompatible => github.com/TencentBlueking/beats v7.1.43-test2-bk+incompatible
 )
