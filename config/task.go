@@ -95,6 +95,7 @@ type SenderConfig struct {
 
 	// Output
 	RemovePathPrefix string            `config:"remove_path_prefix"` // 去除路径前缀
+	RootFs           string            `config:"root_fs"`            // 根目录文件系统
 	Mounts           []Mount           `config:"mounts"`             // 挂载路径信息
 	MountMap         map[string]string // 挂载路径映射
 	MountHostPaths   []string          // 挂载主机排序列表
