@@ -58,8 +58,8 @@ type FilterConfig struct {
 
 // Mount 挂载配置
 type Mount struct {
-	HostPath      string
-	ContainerPath string
+	HostPath      string `config:"host_path"`
+	ContainerPath string `config:"container_path"`
 }
 
 // ConditionSortByIndex condition配置

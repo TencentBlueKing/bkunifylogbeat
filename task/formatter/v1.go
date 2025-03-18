@@ -57,8 +57,6 @@ func GetOriginFileName(fileName string, pathPrefix string, rootFs string, mountM
 	// 优先使用根目录文件系统进行路径还原，否则使用主机前缀还原
 	if strings.HasPrefix(fileName, rootFs) {
 		fileName = strings.TrimPrefix(fileName, rootFs)
-	} else {
-		fileName = strings.TrimPrefix(fileName, pathPrefix)
 	}
 
 	// 如果失败，使用挂载路径进行还原
