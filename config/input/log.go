@@ -68,6 +68,9 @@ func init() {
 
 		// 打开后，采集速率直接起飞
 		"ludicrous_mode": true,
+
+		// 采集状态的唯一标识符
+		"file_identifier": "inode",
 	}
 	err := cfg.Register("log", func(rawConfig *beat.Config) (*beat.Config, error) {
 		var err error

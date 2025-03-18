@@ -114,7 +114,7 @@ func TestReadLine(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	state := file.NewState(fileInfo, absPath, "log", nil)
+	state := file.NewState(fileInfo, absPath, "log", nil, "")
 	states := file.NewStates()
 	h, err := log.NewHarvester(rawConfig, state, states, MockOutlet, MockOutletFactory)
 	if err != nil {
