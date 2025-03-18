@@ -58,8 +58,8 @@ type FilterConfig struct {
 
 // Mount 挂载配置
 type Mount struct {
-	HostPath      string
-	ContainerPath string
+	HostPath      string `config:"host_path"`
+	ContainerPath string `config:"container_path"`
 }
 
 // ConditionSortByIndex condition配置
@@ -94,11 +94,15 @@ type SenderConfig struct {
 	ExtMetaEnv   map[string]string      `config:"ext_meta_env"`
 
 	// Output
-	RemovePathPrefix string            `config:"remove_path_prefix"` // 去除路径前缀
-	Mounts           []Mount           `config:"mounts"`             // 挂载路径信息
-	MountMap         map[string]string // 挂载路径映射
-	MountHostPaths   []string          // 挂载主机排序列表
-	OutputFormat     string            `config:"output_format"` // 输出格式，为了兼容老版采集器的输出格式
+	RemovePathPrefix string `config:"remove_path_prefix"` // 去除路径前缀
+	OutputFormat     string `config:"output_format"`      // 输出格式，为了兼容老版采集器的输出格式
+}
+
+type MountConfig struct {
+	RootFs         string            `config:"root_fs"` // 根目录文件系统
+	Mounts         []Mount           `config:"mounts"`  // 挂载路径信息
+	MountMap       map[string]string // 挂载路径映射
+	MountHostPaths []string          // 挂载主机排序列表
 }
 
 func metaKeyToField(key string) string {
@@ -157,6 +161,7 @@ type TaskConfig struct {
 	ProcessorConfig `config:",inline"`
 	FiltersConfig   `config:",inline"`
 	SenderConfig    `config:",inline"`
+	MountConfig     `config:",inline"`
 
 	ext map[string]interface{}
 

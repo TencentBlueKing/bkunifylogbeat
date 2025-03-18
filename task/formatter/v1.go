@@ -53,9 +53,11 @@ func (f v1Formatter) GetTaskConfig() *config.TaskConfig {
 	return f.taskConfig
 }
 
-func GetOriginFileName(fileName string, pathPrefix string, mountMap map[string]string, hostPaths []string) string {
-	// 使用前缀进行路径还原
-	fileName = strings.TrimPrefix(fileName, pathPrefix)
+func GetOriginFileName(fileName string, pathPrefix string, rootFs string, mountMap map[string]string, hostPaths []string) string {
+	// 优先使用根目录文件系统进行路径还原，否则使用主机前缀还原
+	if strings.HasPrefix(fileName, rootFs) {
+		fileName = strings.TrimPrefix(fileName, rootFs)
+	}
 
 	// 如果失败，使用挂载路径进行还原
 	for _, hostPath := range hostPaths {
@@ -78,7 +80,7 @@ func prepareData(f commonFormatter, events []*util.Data) beat.MapStr {
 	lastState := events[len(events)-1].GetState()
 	filename := lastState.Source
 	if len(f.GetTaskConfig().RemovePathPrefix) > 0 {
-		filename = GetOriginFileName(filename, f.GetTaskConfig().RemovePathPrefix,
+		filename = GetOriginFileName(filename, f.GetTaskConfig().RemovePathPrefix, f.GetTaskConfig().RootFs,
 			f.GetTaskConfig().MountMap, f.GetTaskConfig().MountHostPaths)
 	}
 	data := beat.MapStr{
