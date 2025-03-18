@@ -36,6 +36,8 @@ import (
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/formatter"
 	"github.com/TencentBlueKing/bkunifylogbeat/tests"
+
+	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
 )
 
 func init() {
@@ -95,7 +97,7 @@ func mockSender(canPackage bool, packageCount int) (*Sender, error) {
 	if err != nil {
 		return nil, err
 	}
-	taskConfig, err := config.NewTaskConfig(vars)
+	taskConfig, err := config.NewTaskConfig(cfg.Config{}, vars)
 	if err != nil {
 		return nil, err
 	}

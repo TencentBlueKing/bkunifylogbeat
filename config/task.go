@@ -179,7 +179,7 @@ func (c *TaskConfig) GetExtMeta() map[string]interface{} {
 }
 
 // NewTaskConfig 创建采集任务配置
-func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
+func NewTaskConfig(beatConfig Config, rawConfig *beat.Config) (*TaskConfig, error) {
 	config := &TaskConfig{
 		Type:   "log",
 		DataID: 0,
@@ -190,6 +190,9 @@ func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
 			OutputFormat: "v2",
 		},
 	}
+
+	// TODO 这里需要改造成通用逻辑
+	rawConfig.SetString("file_identifier", -1, beatConfig.FileIdentifier)
 
 	err := rawConfig.Unpack(&config)
 	if err != nil {
@@ -313,7 +316,7 @@ func loadTasks(config Config) map[string]*TaskConfig {
 		if err != nil {
 			continue
 		}
-		task, err := NewTaskConfig(cfg)
+		task, err := NewTaskConfig(config, cfg)
 		if err != nil {
 			logp.L.Errorf("load task failed: %v", err)
 			continue
@@ -364,7 +367,7 @@ func GetTasks(config Config) map[string]*TaskConfig {
 					logp.L.Errorf("Error reading config file: %v", err)
 					continue
 				}
-				task, err := NewTaskConfig(localConfigRaw)
+				task, err := NewTaskConfig(config, localConfigRaw)
 				if err != nil {
 					logp.L.Errorf("Error reading config file: %v", err)
 					continue
@@ -397,7 +400,7 @@ func CreateTaskConfig(vars map[string]interface{}) (*TaskConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	config, err := NewTaskConfig(rawConfig)
+	config, err := NewTaskConfig(Config{}, rawConfig)
 	if err != nil {
 		return nil, err
 	}

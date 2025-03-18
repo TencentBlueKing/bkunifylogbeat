@@ -68,6 +68,9 @@ func init() {
 
 		// 打开后，采集速率直接起飞
 		"ludicrous_mode": true,
+
+		// 采集状态的唯一标识符
+		"file_identifier": "inode",
 	}
 	err := cfg.Register("log", func(rawConfig *beat.Config) (*beat.Config, error) {
 		var err error
@@ -113,6 +116,8 @@ func init() {
 			// 可适当调大，但是更建议对业务日志本身做处理，增加轮转机制，而不是一直写同一个日志文件
 			defaultConfig["clean_inactive"] = logConfig.IgnoreOlder + logConfig.ScanFrequency + 180*24*time.Hour
 		}
+
+		//defaultConfig["file_identifier"] = beater.GetConfig().FileIdentifier
 
 		err = rawConfig.Merge(defaultConfig)
 		if err != nil {

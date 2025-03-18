@@ -58,6 +58,9 @@ type Config struct {
 	MustHostIDExist    bool   `config:"must_host_id_exist"`
 	CheckDiff          bool   `config:"check_diff"`
 	WindowsReloadPath  string `config:"windows_reload_path"`
+
+	// 采集状态的唯一标识符
+	FileIdentifier string `config:"file_identifier"`
 }
 
 // 从配置目录
@@ -113,6 +116,7 @@ func Parse(cfg *beat.Config) (Config, error) {
 		Seccomp: Seccomp{
 			Enable: false,
 		},
+		FileIdentifier: "inode",
 	}
 	err := cfg.Unpack(&config)
 	if err != nil {
