@@ -182,7 +182,7 @@ func TestStateFileIdentifierInode(t *testing.T) {
 	assert.Equal(t, newStates[2].Offset, int64(30))
 	assert.Equal(t, newStates[2].ID(), "100-900:/data/logs/new.log")
 
-	// step 3.2: 测试唯一性校验 path
+	// step 3.3: 测试唯一性校验 path
 	registrar.fileIdentifier = "path"
 
 	states = []file.State{
