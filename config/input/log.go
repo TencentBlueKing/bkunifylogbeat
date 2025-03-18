@@ -117,8 +117,6 @@ func init() {
 			defaultConfig["clean_inactive"] = logConfig.IgnoreOlder + logConfig.ScanFrequency + 180*24*time.Hour
 		}
 
-		//defaultConfig["file_identifier"] = beater.GetConfig().FileIdentifier
-
 		err = rawConfig.Merge(defaultConfig)
 		if err != nil {
 			return nil, err
