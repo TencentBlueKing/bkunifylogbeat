@@ -67,11 +67,13 @@ type Registrar struct {
 	gcFrequency  time.Duration
 
 	stateIDCache map[string]struct{} // 等待持久化的状态ID
+
+	fileIdentifier string
 }
 
 // New creates a new Registrar instance, updating the registry file on
 // `file.State` updates. New fails if the file can not be opened or created.
-func New(config cfg.Registry) (*Registrar, error) {
+func New(config cfg.Registry, fileIdentifier string) (*Registrar, error) {
 	r := &Registrar{
 		done: make(chan struct{}),
 		wg:   sync.WaitGroup{},
@@ -82,6 +84,8 @@ func New(config cfg.Registry) (*Registrar, error) {
 		gcFrequency:  config.GcFrequency,
 
 		stateIDCache: make(map[string]struct{}),
+
+		fileIdentifier: fileIdentifier,
 	}
 	return r, r.Init()
 }
@@ -158,6 +162,12 @@ func (r *Registrar) Init() error {
 		logp.L.Infof("migrate states from key=>%s success, delete this key", registrarKey)
 
 	}
+
+	// storage 存储以 state.ID() 来作为 key
+	// 当切换了不同的 fileIdentifier，state.ID() 会发生变化
+	// 因此可能会出现 key 不同，但 state 代表了同一个文件的情况
+	// 这里对 state 进行去重
+	states = r.deduplicateStates(states)
 
 	states = r.migrate(states)
 	logp.L.Infof("load states: time=>%s, count=>%d, flush=>%s, gcFrequency=>%s",
@@ -269,6 +279,28 @@ func (r *Registrar) flushRegistry() {
 
 	r.clearStateIDCache()
 
+}
+
+// deduplicateStates removes duplicate states from the list.
+func (r *Registrar) deduplicateStates(states []file.State) []file.State {
+	deduplicatedMap := make(map[string]file.State, len(states))
+	for _, state := range states {
+		// 设置去重依据
+		state.FileIdentifier = r.fileIdentifier
+		if _, ok := deduplicatedMap[state.ID()]; !ok {
+			// 从未出现过的，添加到 map
+			deduplicatedMap[state.ID()] = state
+		} else if state.Timestamp.After(deduplicatedMap[state.ID()].Timestamp) {
+			// 出现过，但是时间更新了，更新到 map
+			deduplicatedMap[state.ID()] = state
+		}
+	}
+
+	deduplicatedStates := make([]file.State, 0, len(deduplicatedMap))
+	for _, state := range deduplicatedMap {
+		deduplicatedStates = append(deduplicatedStates, state)
+	}
+	return deduplicatedStates
 }
 
 // migrate file state

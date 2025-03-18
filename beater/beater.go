@@ -150,7 +150,7 @@ func (bt *LogBeat) Run() error {
 
 	// load last states
 	var err error
-	Registrar, err = registrar.New(bt.config.Registry)
+	Registrar, err = registrar.New(bt.config.Registry, bt.config.FileIdentifier)
 	if err != nil {
 		return err
 	}
