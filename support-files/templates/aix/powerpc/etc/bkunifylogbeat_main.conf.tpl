@@ -63,6 +63,6 @@ resource_limit:
         resource_limit.get('mem', {}).get('min', 100)
       ] | max,
         resource_limit.get('mem', {}).get('max', 1000)
-    ] | min
+    ] | min | int
   }}
 {% endif %}
