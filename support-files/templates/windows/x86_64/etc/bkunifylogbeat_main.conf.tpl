@@ -42,3 +42,27 @@ bkunifylogbeat.multi_config:
     file_pattern: "*.conf"
   - path: {{ plugin_path.subconfig_path }}\bcs
     file_pattern: "*.conf"
+
+{% if cmdb_instance.host.bk_cpu and cmdb_instance.host.bk_mem %}
+{%- set resource_limit = resource_limit | default({}) -%}
+resource_limit:
+  enabled: true
+  cpu: {{
+    [
+      [
+        cmdb_instance.host.bk_cpu * resource_limit.get('cpu', {}).get('percentage', 0.1),
+        resource_limit.get('cpu', {}).get('min', 0.1)
+      ] | max,
+      resource_limit.get('cpu', {}).get('max', 1)
+    ] | min
+  }}
+  mem: {{
+    [
+      [
+        cmdb_instance.host.bk_mem * resource_limit.get('mem', {}).get('percentage', 0.1),
+        resource_limit.get('mem', {}).get('min', 100)
+      ] | max,
+        resource_limit.get('mem', {}).get('max', 1000)
+    ] | min
+  }}
+{% endif %}

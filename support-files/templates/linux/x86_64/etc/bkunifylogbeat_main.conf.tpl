@@ -43,7 +43,7 @@ bkunifylogbeat.multi_config:
   - path: {{ plugin_path.subconfig_path }}/bcs
     file_pattern: "*.conf"
 
-{%- if cmdb_instance.host.bk_cpu and cmdb_instance.host.bk_mem %}
+{% if cmdb_instance.host.bk_cpu and cmdb_instance.host.bk_mem %}
 {%- set resource_limit = resource_limit | default({}) -%}
 resource_limit:
   enabled: true
@@ -65,4 +65,4 @@ resource_limit:
         resource_limit.get('mem', {}).get('max', 1000)
     ] | min
   }}
-{%- endif %}
+{% endif %}
