@@ -25,10 +25,9 @@
 package formatter
 
 import (
-	"strings"
-
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/elastic/beats/filebeat/util"
+	"strings"
 
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/utils"
@@ -54,6 +53,23 @@ func (f v1Formatter) GetTaskConfig() *config.TaskConfig {
 	return f.taskConfig
 }
 
+func GetOriginFileName(fileName string, pathPrefix string, rootFs string, mountMap map[string]string, hostPaths []string) string {
+	// 优先使用根目录文件系统进行路径还原，否则使用主机前缀还原
+	if strings.HasPrefix(fileName, rootFs) {
+		fileName = strings.TrimPrefix(fileName, rootFs)
+	}
+
+	// 如果失败，使用挂载路径进行还原
+	for _, hostPath := range hostPaths {
+		containerPath := mountMap[hostPath]
+		if strings.HasPrefix(fileName, hostPath) {
+			fileName = strings.Replace(fileName, hostPath, containerPath, 1)
+			break
+		}
+	}
+
+	return fileName
+}
 func prepareData(f commonFormatter, events []*util.Data) beat.MapStr {
 	var (
 		datetime, utcTime string
@@ -64,7 +80,8 @@ func prepareData(f commonFormatter, events []*util.Data) beat.MapStr {
 	lastState := events[len(events)-1].GetState()
 	filename := lastState.Source
 	if len(f.GetTaskConfig().RemovePathPrefix) > 0 {
-		filename = strings.TrimPrefix(filename, f.GetTaskConfig().RemovePathPrefix)
+		filename = GetOriginFileName(filename, f.GetTaskConfig().RemovePathPrefix, f.GetTaskConfig().RootFs,
+			f.GetTaskConfig().MountMap, f.GetTaskConfig().MountHostPaths)
 	}
 	data := beat.MapStr{
 		"dataid":   f.GetTaskConfig().DataID,

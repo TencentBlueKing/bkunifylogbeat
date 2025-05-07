@@ -56,6 +56,12 @@ type FilterConfig struct {
 	Conditions []ConditionConfig `config:"conditions"`
 }
 
+// Mount 挂载配置
+type Mount struct {
+	HostPath      string `config:"host_path"`
+	ContainerPath string `config:"container_path"`
+}
+
 // ConditionSortByIndex condition配置
 type ConditionSortByIndex []ConditionConfig
 
@@ -90,6 +96,13 @@ type SenderConfig struct {
 	// Output
 	RemovePathPrefix string `config:"remove_path_prefix"` // 去除路径前缀
 	OutputFormat     string `config:"output_format"`      // 输出格式，为了兼容老版采集器的输出格式
+}
+
+type MountConfig struct {
+	RootFs         string            `config:"root_fs"` // 根目录文件系统
+	Mounts         []Mount           `config:"mounts"`  // 挂载路径信息
+	MountMap       map[string]string // 挂载路径映射
+	MountHostPaths []string          // 挂载主机排序列表
 }
 
 func metaKeyToField(key string) string {
@@ -148,6 +161,7 @@ type TaskConfig struct {
 	ProcessorConfig `config:",inline"`
 	FiltersConfig   `config:",inline"`
 	SenderConfig    `config:",inline"`
+	MountConfig     `config:",inline"`
 
 	ext map[string]interface{}
 
@@ -170,7 +184,7 @@ func (c *TaskConfig) GetExtMeta() map[string]interface{} {
 }
 
 // NewTaskConfig 创建采集任务配置
-func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
+func NewTaskConfig(beatConfig Config, rawConfig *beat.Config) (*TaskConfig, error) {
 	config := &TaskConfig{
 		Type:   "log",
 		DataID: 0,
@@ -181,6 +195,9 @@ func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
 			OutputFormat: "v2",
 		},
 	}
+
+	// TODO 这里需要改造成通用逻辑
+	rawConfig.SetString("file_identifier", -1, beatConfig.FileIdentifier)
 
 	err := rawConfig.Unpack(&config)
 	if err != nil {
@@ -207,9 +224,6 @@ func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
 					condition.Op = opInclude
 				}
 
-				// 去除字符串首尾空白字符
-				condition.Key = strings.TrimSpace(condition.Key)
-
 				// 初始化条件匹配方法 Matcher
 				matcher, err := getOperationFunc(condition.Op, condition.Key)
 
@@ -233,7 +247,23 @@ func NewTaskConfig(rawConfig *beat.Config) (*TaskConfig, error) {
 		}
 	}
 
-	//根据任务配置获取hash值
+	// 提取 hostPaths 并创建一个映射到 containerPath 的映射
+	hostPaths := make([]string, 0, len(config.Mounts))
+	mountMap := make(map[string]string, len(config.Mounts))
+	for _, mount := range config.Mounts {
+		hostPaths = append(hostPaths, mount.HostPath)
+		mountMap[mount.HostPath] = mount.ContainerPath
+	}
+
+	// 按照container path层级的数量排序host path，层级越多的路径会越先处理
+	sort.Slice(hostPaths, func(i, j int) bool {
+		return strings.Count(mountMap[hostPaths[i]], string(filepath.Separator)) > strings.Count(mountMap[hostPaths[j]], string(filepath.Separator))
+	})
+
+	config.MountHostPaths = hostPaths
+	config.MountMap = mountMap
+
+	// 根据任务配置获取hash值
 	err, config.ID = utils.HashRawConfig(config.RawConfig)
 	if err != nil {
 		return nil, err
@@ -291,7 +321,7 @@ func loadTasks(config Config) map[string]*TaskConfig {
 		if err != nil {
 			continue
 		}
-		task, err := NewTaskConfig(cfg)
+		task, err := NewTaskConfig(config, cfg)
 		if err != nil {
 			logp.L.Errorf("load task failed: %v", err)
 			continue
@@ -342,7 +372,7 @@ func GetTasks(config Config) map[string]*TaskConfig {
 					logp.L.Errorf("Error reading config file: %v", err)
 					continue
 				}
-				task, err := NewTaskConfig(localConfigRaw)
+				task, err := NewTaskConfig(config, localConfigRaw)
 				if err != nil {
 					logp.L.Errorf("Error reading config file: %v", err)
 					continue
@@ -375,7 +405,7 @@ func CreateTaskConfig(vars map[string]interface{}) (*TaskConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	config, err := NewTaskConfig(rawConfig)
+	config, err := NewTaskConfig(Config{}, rawConfig)
 	if err != nil {
 		return nil, err
 	}

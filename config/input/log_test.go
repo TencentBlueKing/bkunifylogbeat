@@ -42,7 +42,7 @@ func mockTaskConfig(vars map[string]interface{}) (*cfg.TaskConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	config, err := cfg.NewTaskConfig(rawConfig)
+	config, err := cfg.NewTaskConfig(cfg.Config{}, rawConfig)
 	if err != nil {
 		return nil, err
 	}

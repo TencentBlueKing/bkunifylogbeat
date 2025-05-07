@@ -56,7 +56,7 @@ func init() {
 		"clean_removed": true,
 
 		// 监听文件变更时间
-		"ignore_older": 168 * time.Hour,
+		"ignore_older": 24 * time.Hour,
 
 		// harvester
 		"tail_files": true,
@@ -64,10 +64,13 @@ func init() {
 		"symlinks":   true,
 
 		// 不再限制单行大小
-		"max_bytes": 100 * humanize.MiByte,
+		"max_bytes": 1 * humanize.MiByte,
 
 		// 打开后，采集速率直接起飞
 		"ludicrous_mode": true,
+
+		// 采集状态的唯一标识符
+		"file_identifier": "inode",
 	}
 	err := cfg.Register("log", func(rawConfig *beat.Config) (*beat.Config, error) {
 		var err error
@@ -90,7 +93,7 @@ func init() {
 		// 特殊配置处理
 		logConfig := &LogConfig{
 			CloseInactive: 5 * time.Minute,
-			IgnoreOlder:   168 * time.Hour,
+			IgnoreOlder:   24 * time.Hour,
 		}
 		err = rawConfig.Unpack(&logConfig)
 		if err != nil {
