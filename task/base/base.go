@@ -50,8 +50,9 @@ type Node struct {
 	ID         string
 	ParentNode *Node
 
-	Outs map[string]chan interface{}
-	In   chan interface{}
+	Outs     map[string]chan interface{}
+	OutsLock sync.Mutex
+	In       chan interface{}
 
 	CloseOnce sync.Once
 	End       chan struct{}
@@ -140,6 +141,8 @@ func (n *Node) AddOutput(node *Node) {
 		logp.L.Error("should not add nil output!")
 		return
 	}
+	n.OutsLock.Lock()
+	defer n.OutsLock.Unlock()
 	// 记录父节点，为了释放的时候，可以从后往前遍历Node
 	node.ParentNode = n
 	n.Outs[node.ID] = node.In
@@ -150,6 +153,8 @@ func (n *Node) RemoveOutput(node *Node) {
 		logp.L.Error("should not remove nil output!")
 		return
 	}
+	n.OutsLock.Lock()
+	defer n.OutsLock.Unlock()
 	// 一层层往上释放
 	delete(n.Outs, node.ID)
 	if len(n.Outs) == 0 {
@@ -166,6 +171,8 @@ func (n *Node) RemoveOutput(node *Node) {
 
 func (n *Node) Run() {
 	defer close(n.GameOver)
+	n.OutsLock.Lock()
+	defer n.OutsLock.Unlock()
 	for {
 		select {
 		case <-n.End:

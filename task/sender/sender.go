@@ -252,6 +252,8 @@ func (send *Sender) send(events []*util.Data) {
 		return
 	}
 
+	send.OutsLock.Lock()
+	defer send.OutsLock.Unlock()
 	lastState := events[len(events)-1].GetState()
 	formattedEvent := send.formatter.Format(events)
 
