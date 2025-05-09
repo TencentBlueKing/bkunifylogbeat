@@ -40,6 +40,7 @@ var (
 )
 
 type NodeI interface {
+	GetOuts(node *Node)
 	SetInput(input chan interface{})
 	AddOutput(node *Node)
 	RemoveOutput(node *Node)
@@ -51,7 +52,7 @@ type Node struct {
 	ParentNode *Node
 
 	Outs     map[string]chan interface{}
-	OutsLock sync.Mutex
+	OutsLock sync.RWMutex
 	In       chan interface{}
 
 	CloseOnce sync.Once
@@ -128,6 +129,17 @@ func (n *Node) RemoveTaskNode(nextNode *Node, taskNode *TaskNode) {
 	}
 }
 
+func (n *Node) GetOuts() map[string]chan interface{} {
+	result := make(map[string]chan interface{}, len(n.Outs))
+	// 新增读锁
+	n.OutsLock.RLock()
+	for k, v := range n.Outs {
+		result[k] = v
+	}
+	n.OutsLock.RUnlock()
+	return result
+}
+
 func (n *Node) SetInput(input chan interface{}) {
 	if input == nil {
 		logp.L.Error("should not add nil input!")
@@ -141,11 +153,11 @@ func (n *Node) AddOutput(node *Node) {
 		logp.L.Error("should not add nil output!")
 		return
 	}
-	n.OutsLock.Lock()
-	defer n.OutsLock.Unlock()
 	// 记录父节点，为了释放的时候，可以从后往前遍历Node
 	node.ParentNode = n
+	n.OutsLock.RLock()
 	n.Outs[node.ID] = node.In
+	n.OutsLock.RUnlock()
 }
 
 func (n *Node) RemoveOutput(node *Node) {
@@ -154,9 +166,9 @@ func (n *Node) RemoveOutput(node *Node) {
 		return
 	}
 	n.OutsLock.Lock()
-	defer n.OutsLock.Unlock()
 	// 一层层往上释放
 	delete(n.Outs, node.ID)
+	n.OutsLock.Unlock()
 	if len(n.Outs) == 0 {
 		if n.ParentNode != nil {
 			n.ParentNode.RemoveOutput(n)
@@ -171,8 +183,6 @@ func (n *Node) RemoveOutput(node *Node) {
 
 func (n *Node) Run() {
 	defer close(n.GameOver)
-	n.OutsLock.Lock()
-	defer n.OutsLock.Unlock()
 	for {
 		select {
 		case <-n.End:
@@ -182,7 +192,8 @@ func (n *Node) Run() {
 			// do anything by yourself
 			event := e
 			//event := n.handle(e)
-			for _, out := range n.Outs {
+			outs := n.GetOuts()
+			for _, out := range outs {
 				out <- event
 			}
 		}

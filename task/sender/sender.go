@@ -252,13 +252,11 @@ func (send *Sender) send(events []*util.Data) {
 		return
 	}
 
-	send.OutsLock.Lock()
-	defer send.OutsLock.Unlock()
 	lastState := events[len(events)-1].GetState()
 	formattedEvent := send.formatter.Format(events)
 
 	// send data
-	for taskID, out := range send.Outs {
+	for taskID, out := range send.GetOuts() {
 		taskConfig, ok := send.taskConfigMaps[taskID]
 		if !ok {
 			senderDroppedTotal.Add(1)
