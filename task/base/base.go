@@ -155,9 +155,9 @@ func (n *Node) AddOutput(node *Node) {
 	}
 	// 记录父节点，为了释放的时候，可以从后往前遍历Node
 	node.ParentNode = n
-	n.OutsLock.RLock()
+	n.OutsLock.Lock()
 	n.Outs[node.ID] = node.In
-	n.OutsLock.RUnlock()
+	n.OutsLock.Unlock()
 }
 
 func (n *Node) RemoveOutput(node *Node) {
