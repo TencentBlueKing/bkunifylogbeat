@@ -180,7 +180,7 @@ func (in *Input) Run() {
 
 			data := e.(*util.Data)
 			if data.Event.Fields != nil {
-				for _, out := range in.Outs {
+				for _, out := range in.GetOuts() {
 					select {
 					case <-in.End:
 						return

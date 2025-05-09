@@ -150,7 +150,7 @@ func (p *Processors) Run() {
 			data := e.(*util.Data)
 			event := p.Handle(&data.Event)
 			if event != nil {
-				for _, out := range p.Outs {
+				for _, out := range p.GetOuts() {
 					select {
 					case <-p.End:
 						logp.L.Infof("node processor(%s) is done", p.ID)
