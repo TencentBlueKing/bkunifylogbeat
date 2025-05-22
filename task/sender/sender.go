@@ -256,7 +256,7 @@ func (send *Sender) send(events []*util.Data) {
 	formattedEvent := send.formatter.Format(events)
 
 	// send data
-	for taskID, out := range send.Outs {
+	for taskID, out := range send.GetOuts() {
 		taskConfig, ok := send.taskConfigMaps[taskID]
 		if !ok {
 			senderDroppedTotal.Add(1)

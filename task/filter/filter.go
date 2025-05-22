@@ -158,7 +158,7 @@ func (f *Filters) singleFilter(data *util.Data) {
 	var ok bool
 	text, ok = event.Fields["data"].(string)
 	if !ok || f.Delimiter == "" {
-		for _, out := range f.Outs {
+		for _, out := range f.GetOuts() {
 			select {
 			case <-f.End:
 				logp.L.Infof("node filter(%s) is done", f.ID)
@@ -210,7 +210,7 @@ func (f *Filters) batchFilter(data *util.Data) {
 	texts := data.Event.GetTexts()
 
 	if f.Delimiter == "" {
-		for _, out := range f.Outs {
+		for _, out := range f.GetOuts() {
 			select {
 			case <-f.End:
 				logp.L.Infof("node filter(%s) is done", f.ID)
