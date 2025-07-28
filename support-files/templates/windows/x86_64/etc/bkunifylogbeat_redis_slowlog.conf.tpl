@@ -6,6 +6,8 @@ local: {% for item in local %}
         - '{{ host }}'{% endfor %}
       password: '{{ item.get('password', '') }}'
       password_file: '{{ item.get('password_file', '') }}'
+      idle_timeout: '{{ item.get('idle_timeout', 10) | int }}s'
+      maxconn: {{ item.get('maxconn', 10) | int }}
 
       {% if item.ext_meta is defined or item.labels is defined %}ext_meta:
       {%- if item.ext_meta is defined %}
