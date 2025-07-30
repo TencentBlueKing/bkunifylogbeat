@@ -5,7 +5,7 @@ go 1.23.0
 toolchain go1.23.10
 
 require (
-	github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse v0.0.0-00010101000000-000000000000
+	github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse v1.9.0
 	github.com/TencentBlueKing/bkmonitor-datalink/pkg/utils v0.3.0
 	github.com/bytedance/sonic v1.12.10
 	github.com/dustin/go-humanize v1.0.0
@@ -116,7 +116,5 @@ require (
 
 replace (
 	github.com/Sirupsen/logrus v1.6.0 => github.com/sirupsen/logrus v1.6.0
-	github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse => ../bkmonitor-datalink/pkg/libgse
-	github.com/TencentBlueKing/bkmonitor-datalink/pkg/utils => ../bkmonitor-datalink/pkg/utils
 	github.com/elastic/beats v7.1.1+incompatible => github.com/TencentBlueking/beats v7.1.49-bk+incompatible
 )
