@@ -42,8 +42,9 @@ var (
 )
 
 func initGseHook() {
-	gse.RegisterSendHook(func(i int32, f float64) {
+	gse.RegisterSendHook(func(i int32, f float64) bool {
 		monitoring.NewFloatWithDataID(int(i), "beat_send_bytes_total").Add(f)
+		return true
 	})
 }
 

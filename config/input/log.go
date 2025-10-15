@@ -56,7 +56,7 @@ func init() {
 		"clean_removed": true,
 
 		// 监听文件变更时间
-		"ignore_older": 24 * time.Hour,
+		"ignore_older": 7 * 24 * time.Hour,
 
 		// harvester
 		"tail_files": true,

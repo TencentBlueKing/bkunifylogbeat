@@ -86,7 +86,15 @@ func splitProcStat(content []byte) []string {
 	restFields := strings.Fields(string(content[nameEnd+2:])) // +2 skip ') '
 	name := content[nameStart+1 : nameEnd]
 	pid := strings.TrimSpace(string(content[:nameStart]))
-	fields := make([]string, 3, len(restFields)+3)
+
+	// 安全计算容量，如果溢出则使用最大安全值
+	safeCapacity := len(restFields)
+	if safeCapacity < 0 || safeCapacity > 100 { // 检查是否溢出
+		safeCapacity = 100                     // 使用最大安全值
+		restFields = restFields[:safeCapacity] // 截取前N个字段
+	}
+
+	fields := make([]string, 3, safeCapacity+3)
 	fields[1] = string(pid)
 	fields[2] = string(name)
 	fields = append(fields, restFields...)
