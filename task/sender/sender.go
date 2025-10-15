@@ -182,12 +182,14 @@ func (send *Sender) Run() {
 				eventCount := int64(beatEvent.Count())
 				base.CrawlerSendTotal.Add(eventCount)
 				senderReceived.Add(eventCount)
+				send.taskNodeMutex.RLock()
 				for _, taskNodeList := range send.TaskNodeList {
 					for _, tNode := range taskNodeList {
 						tNode.CrawlerSendTotal.Add(eventCount)
 						tNode.SenderReceive.Add(eventCount)
 					}
 				}
+				send.taskNodeMutex.RUnlock()
 			}
 			err := send.cacheSend(event)
 			if err != nil {
@@ -271,11 +273,13 @@ func (send *Sender) send(events []*util.Data) {
 			}
 
 			senderState.Add(1)
+			send.taskNodeMutex.RLock()
 			for _, taskNodeList := range send.TaskNodeList {
 				for _, tNode := range taskNodeList {
 					tNode.SenderState.Add(1)
 				}
 			}
+			send.taskNodeMutex.RUnlock()
 		} else {
 			data := formattedEvent.Clone()
 			data["dataid"] = taskConfig.DataID
@@ -287,11 +291,13 @@ func (send *Sender) send(events []*util.Data) {
 			}
 			// 发送到pipeline的数量
 			senderSendTotal.Add(1)
+			send.taskNodeMutex.RLock()
 			for _, taskNodeList := range send.TaskNodeList {
 				for _, tNode := range taskNodeList {
 					tNode.SenderSendTotal.Add(1)
 				}
 			}
+			send.taskNodeMutex.RUnlock()
 		}
 		select {
 		case <-send.End:

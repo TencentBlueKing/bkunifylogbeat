@@ -186,11 +186,13 @@ func (in *Input) Run() {
 						return
 					case out <- data:
 						inputHandledTotal.Add(1)
+						in.taskNodeMutex.RLock()
 						for _, taskNodeList := range in.TaskNodeList {
 							for _, tNode := range taskNodeList {
 								tNode.CrawlerReceived.Add(int64(data.Event.Count()))
 							}
 						}
+						in.taskNodeMutex.RUnlock()
 					}
 				}
 			} else {
@@ -200,11 +202,13 @@ func (in *Input) Run() {
 					Private: data.GetState(),
 				})
 				base.CrawlerState.Add(1)
+				in.taskNodeMutex.RLock()
 				for _, taskNodeList := range in.TaskNodeList {
 					for _, tNode := range taskNodeList {
 						tNode.CrawlerState.Add(1)
 					}
 				}
+				in.taskNodeMutex.RUnlock()
 			}
 		}
 	}

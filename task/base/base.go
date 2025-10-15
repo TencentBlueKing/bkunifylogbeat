@@ -61,6 +61,7 @@ type Node struct {
 	GameOver chan struct{} // 用该信号代表Run函数已经完整退出
 
 	TaskNodeList map[string]map[string]*TaskNode
+	taskNodeMutex sync.RWMutex // 保护 TaskNodeList 的读写锁
 }
 
 type TaskNode struct {
@@ -104,6 +105,8 @@ func (n *Node) AddTaskNode(nextNode *Node, taskNode *TaskNode) {
 	if nextNode == nil || taskNode == nil {
 		return
 	}
+	n.taskNodeMutex.Lock()
+	defer n.taskNodeMutex.Unlock()
 	nextNodeToTaskNodeList, ok := n.TaskNodeList[nextNode.ID]
 	if !ok {
 		nextNodeToTaskNodeList = map[string]*TaskNode{
@@ -123,6 +126,8 @@ func (n *Node) RemoveTaskNode(nextNode *Node, taskNode *TaskNode) {
 	if n.ParentNode != nil {
 		n.ParentNode.RemoveTaskNode(n, taskNode)
 	}
+	n.taskNodeMutex.Lock()
+	defer n.taskNodeMutex.Unlock()
 	delete(n.TaskNodeList[nextNode.ID], taskNode.ID)
 	if len(n.TaskNodeList[nextNode.ID]) == 0 {
 		delete(n.TaskNodeList, nextNode.ID)
