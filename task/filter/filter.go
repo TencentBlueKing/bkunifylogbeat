@@ -181,15 +181,10 @@ func (f *Filters) singleFilter(data *util.Data) {
 			// update metric
 			{
 				filterDroppedTotal.Add(1)
-				f.taskNodeMutex.RLock()
-				taskNodeList, ok := f.TaskNodeList[processorID]
-				if ok {
-					for _, tNode := range taskNodeList {
-						base.CrawlerDropped.Add(1)
-						tNode.CrawlerDropped.Add(1)
-					}
-				}
-				f.taskNodeMutex.RUnlock()
+				f.ForEachTaskNodeBy(processorID, func(tNode *base.TaskNode) {
+					base.CrawlerDropped.Add(1)
+					tNode.CrawlerDropped.Add(1)
+				})
 			}
 			continue
 		}
@@ -246,15 +241,10 @@ func (f *Filters) batchFilter(data *util.Data) {
 		if unmatchedCount > 0 {
 			// update metric
 			filterDroppedTotal.Add(unmatchedCount)
-			f.taskNodeMutex.RLock()
-			taskNodeList, ok := f.TaskNodeList[processorID]
-			if ok {
-				for _, tNode := range taskNodeList {
-					base.CrawlerDropped.Add(unmatchedCount)
-					tNode.CrawlerDropped.Add(unmatchedCount)
-				}
-			}
-			f.taskNodeMutex.RUnlock()
+			f.ForEachTaskNodeBy(processorID, func(tNode *base.TaskNode) {
+				base.CrawlerDropped.Add(unmatchedCount)
+				tNode.CrawlerDropped.Add(unmatchedCount)
+			})
 		}
 
 		if len(matchedTexts) > 0 {

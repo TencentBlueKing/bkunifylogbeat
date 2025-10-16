@@ -40,7 +40,7 @@ var (
 )
 
 type NodeI interface {
-	GetOuts(node *Node)
+    GetOuts() map[string]chan interface{}
 	SetInput(input chan interface{})
 	AddOutput(node *Node)
 	RemoveOutput(node *Node)
@@ -51,8 +51,8 @@ type Node struct {
 	ID         string
 	ParentNode *Node
 
-	Outs     map[string]chan interface{}
-	OutsLock sync.RWMutex
+    Outs     map[string]chan interface{} // 下游节点的输出通道集合（key 为节点 ID）
+    OutsLock sync.RWMutex               // 保护 Outs 并发读写的锁
 	In       chan interface{}
 
 	CloseOnce sync.Once
@@ -60,8 +60,8 @@ type Node struct {
 
 	GameOver chan struct{} // 用该信号代表Run函数已经完整退出
 
-	TaskNodeList map[string]map[string]*TaskNode
-	taskNodeMutex sync.RWMutex // 保护 TaskNodeList 的读写锁
+    TaskNodeList map[string]map[string]*TaskNode
+    taskNodeMutex sync.RWMutex // 保护 TaskNodeList 并发读写的锁
 }
 
 type TaskNode struct {
@@ -134,9 +134,32 @@ func (n *Node) RemoveTaskNode(nextNode *Node, taskNode *TaskNode) {
 	}
 }
 
+// ForEachTaskNode 安全遍历所有任务节点，并对每个节点执行 f
+func (n *Node) ForEachTaskNode(f func(*TaskNode)) {
+    n.taskNodeMutex.RLock()
+    for _, taskNodeList := range n.TaskNodeList {
+        for _, tNode := range taskNodeList {
+            f(tNode)
+        }
+    }
+    n.taskNodeMutex.RUnlock()
+}
+
+// ForEachTaskNodeBy 按下游节点 ID 安全遍历任务节点，并执行 f
+func (n *Node) ForEachTaskNodeBy(nextID string, f func(*TaskNode)) {
+    n.taskNodeMutex.RLock()
+    if taskNodeList, ok := n.TaskNodeList[nextID]; ok {
+        for _, tNode := range taskNodeList {
+            f(tNode)
+        }
+    }
+    n.taskNodeMutex.RUnlock()
+}
+
+// GetOuts 返回当前 Outs 的浅拷贝快照，避免遍历时长时间持有锁
 func (n *Node) GetOuts() map[string]chan interface{} {
 	result := make(map[string]chan interface{}, len(n.Outs))
-	// 新增读锁
+    // 读锁，保证并发安全
 	n.OutsLock.RLock()
 	for k, v := range n.Outs {
 		result[k] = v
