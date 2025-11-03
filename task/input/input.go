@@ -186,11 +186,9 @@ func (in *Input) Run() {
 						return
 					case out <- data:
 						inputHandledTotal.Add(1)
-						for _, taskNodeList := range in.TaskNodeList {
-							for _, tNode := range taskNodeList {
-								tNode.CrawlerReceived.Add(int64(data.Event.Count()))
-							}
-						}
+						in.ForEachTaskNode(func(tNode *base.TaskNode) {
+							tNode.CrawlerReceived.Add(int64(data.Event.Count()))
+						})
 					}
 				}
 			} else {
@@ -200,11 +198,9 @@ func (in *Input) Run() {
 					Private: data.GetState(),
 				})
 				base.CrawlerState.Add(1)
-				for _, taskNodeList := range in.TaskNodeList {
-					for _, tNode := range taskNodeList {
-						tNode.CrawlerState.Add(1)
-					}
-				}
+				in.ForEachTaskNode(func(tNode *base.TaskNode) {
+					tNode.CrawlerState.Add(1)
+				})
 			}
 		}
 	}

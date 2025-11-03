@@ -161,12 +161,10 @@ func (p *Processors) Run() {
 				}
 			} else {
 				processDroppedTotal.Add(1)
-				for _, taskNodeList := range p.TaskNodeList {
-					for _, tNode := range taskNodeList {
-						base.CrawlerDropped.Add(1)
-						tNode.CrawlerDropped.Add(1)
-					}
-				}
+				p.ForEachTaskNode(func(tNode *base.TaskNode) {
+					base.CrawlerDropped.Add(1)
+					tNode.CrawlerDropped.Add(1)
+				})
 			}
 		}
 	}
