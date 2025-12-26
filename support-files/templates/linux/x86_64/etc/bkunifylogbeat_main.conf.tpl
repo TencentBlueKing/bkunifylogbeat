@@ -1,5 +1,9 @@
 logging.level: error
-max_procs: 1
+{%- if extra_vars is defined and extra_vars.max_procs is defined %}
+  max_procs: {{ extra_vars.max_procs | default(1, true) }}
+{%- else %}
+  max_procs: 1
+{%- endif %}
 output.bkpipe_multi:
   endpoint: {{ plugin_path.endpoint }}
 {%- if nodeman is defined %}
@@ -42,6 +46,11 @@ bkunifylogbeat.multi_config:
     file_pattern: "*.conf"
   - path: {{ plugin_path.subconfig_path }}/bcs
     file_pattern: "*.conf"
+{%- if extra_vars is defined and extra_vars.file_identifier is defined %}
+bkunifylogbeat.file_identifier: {{ extra_vars.file_identifier | default("inode", true) }}
+{%- else %}
+bkunifylogbeat.file_identifier: "inode"
+{%- endif %}
 
 {% if cmdb_instance.host.bk_cpu and cmdb_instance.host.bk_mem %}
 {%- set resource_limit = resource_limit | default({}) -%}
