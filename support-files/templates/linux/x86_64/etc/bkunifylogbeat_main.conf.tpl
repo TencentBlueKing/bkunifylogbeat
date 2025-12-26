@@ -1,8 +1,8 @@
 logging.level: error
 {%- if extra_vars is defined and extra_vars.max_procs is defined %}
-  max_procs: {{ extra_vars.max_procs | default(1, true) }}
+max_procs: {{ extra_vars.max_procs | default(1, true) }}
 {%- else %}
-  max_procs: 1
+max_procs: 1
 {%- endif %}
 output.bkpipe_multi:
   endpoint: {{ plugin_path.endpoint }}
