@@ -28,11 +28,11 @@ config_templates:
           type: object
           properties:
             max_procs:
-              title: "MaxProcs(最大进程数)"
+              title: "MaxProcs(CPU 最大使用核数)"
               type: number
               default: 1
             file_identifier:
-              title: "FileIdentifier(文件识别模式)"
+              title: "FileIdentifier(文件识别模式，inode/path)"
               type: string
               default: "inode"
   - plugin_version: "*"
