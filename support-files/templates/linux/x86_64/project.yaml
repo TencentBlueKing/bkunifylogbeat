@@ -30,9 +30,11 @@ config_templates:
             max_procs:
               title: "MaxProcs(最大进程数)"
               type: number
+              default: 1
             file_identifier:
               title: "FileIdentifier(文件识别模式)"
               type: string
+              default: "inode"
   - plugin_version: "*"
     name: bkunifylogbeat.conf
     version: 1
