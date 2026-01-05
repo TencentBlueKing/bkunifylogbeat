@@ -19,6 +19,22 @@ config_templates:
     format: yaml
     is_main_config: 1
     source_path: etc/bkunifylogbeat_main.conf.tpl
+    variables:
+      type: object
+      title: variables
+      properties:
+        extra_vars:
+          title: extra_vars
+          type: object
+          properties:
+            max_procs:
+              title: "MaxProcs(CPU 最大使用核数)"
+              type: number
+              default: 1
+            file_identifier:
+              title: "FileIdentifier(文件识别模式，inode/path)"
+              type: string
+              default: "inode"
   - plugin_version: "*"
     name: bkunifylogbeat.conf
     version: 1
