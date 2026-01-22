@@ -66,3 +66,6 @@ resource_limit:
     ] | min | int
   }}
 {% endif %}
+
+seccomp:
+  enabled: false
