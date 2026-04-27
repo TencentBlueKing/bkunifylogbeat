@@ -19,6 +19,20 @@ config_templates:
     format: yaml
     is_main_config: 1
     source_path: etc/bkunifylogbeat_main.conf.tpl
+    variables:
+      type: object
+      title: variables
+      properties:
+        extra_vars:
+          title: extra_vars
+          type: object
+          properties:
+            max_procs:
+              title: max_procs
+              type: number
+            file_identifier:
+              title: file_identifier
+              type: string
   - plugin_version: "*"
     name: bkunifylogbeat.conf
     version: 1
