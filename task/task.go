@@ -122,6 +122,10 @@ func (task *Task) Stop() error {
 	task.ParentNode.RemoveOutput(task.Node)
 	task.ParentNode.RemoveTaskNode(task.Node, task.TaskNode)
 
+	if task.Config.Output.Name() != "" {
+		bkpipe_multi.DeregisterTaskOutput(task.Config.ID)
+	}
+
 	logp.L.Infof("task(%s) is remove", task.ID)
 	task.CloseOnce.Do(func() {
 		close(task.End)
