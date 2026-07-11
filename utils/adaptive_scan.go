@@ -17,11 +17,15 @@ import (
 )
 
 const (
-	adaptiveScanEWMAAlpha        = 0.5
-	adaptiveScanDeadbandRatio    = 0.15
-	adaptiveScanMaxStepRatio     = 2.0
-	adaptiveScanMaxMultiplier    = 64.0
-	adaptiveScanInitialMultiple  = 1.0
+	// 同一个平滑系数同时用于单 input 扫描耗时和全局占空比，避免瞬时抖动直接改变周期。
+	adaptiveScanEWMAAlpha = 0.5
+	// 占空比落在目标值上下 15% 时不调整，防止 multiplier 在目标附近来回振荡。
+	adaptiveScanDeadbandRatio = 0.15
+	// 每轮控制将 multiplier 限制在当前值的 1/2 到 2 倍之间，并限制其最终上限。
+	adaptiveScanMaxStepRatio    = 2.0
+	adaptiveScanMaxMultiplier   = 64.0
+	adaptiveScanInitialMultiple = 1.0
+	// 变更日志按 input 限频，聚合快照则提供固定周期的全局视图。
 	adaptiveScanLogMinInterval   = time.Minute
 	adaptiveScanSnapshotInterval = 5 * time.Minute
 	adaptiveScanSnapshotTopK     = 5
@@ -98,19 +102,24 @@ type AdaptiveScanController struct {
 	controlInterval  time.Duration
 	targetDuty       float64
 
+	// mu 只保护各 Runner 的局部 EWMA、最终周期和日志状态。
 	mu     sync.Mutex
 	inputs map[uint64]*adaptiveScanInputState
 
+	// 热路径与 governor 通过原子值交换累计耗时、全局 multiplier 和最近占空比，
+	// 避免每个 Runner 在计算周期时争用 governor 的采样锁。
 	totalScanNanos atomic.Int64
 	multiplierBits atomic.Uint64
 	lastDutyBits   atomic.Uint64
 
+	// sampleMu 保护相邻采样点及占空比 EWMA，仅由 governor 周期更新。
 	sampleMu        sync.Mutex
 	lastSampleAt    time.Time
 	lastSampleTotal int64
 	smoothedDuty    float64
 	hasSmoothedDuty bool
 
+	// lifecycleMu 保证 Start/Stop 幂等，并避免重复创建或关闭后台 goroutine。
 	lifecycleMu sync.Mutex
 	running     bool
 	done        chan struct{}
@@ -158,6 +167,7 @@ func (c *AdaptiveScanController) NextInterval(inputID uint64, base, scanDuration
 		return base
 	}
 
+	// 累计值供 governor 按采样窗口计算所有 Runner 的聚合扫描占空比。
 	c.totalScanNanos.Add(int64(scanDuration))
 
 	c.mu.Lock()
@@ -177,12 +187,16 @@ func (c *AdaptiveScanController) NextInterval(inputID uint64, base, scanDuration
 		minimum = base
 	}
 
+	// 第一层局部控制：local = EWMA(scanDuration) / targetDuty。
+	// 例如目标占空比为 5%，一次扫描耗时 50ms，则局部周期应约为 1s。
 	localNanos := ewmaScanNanos / c.targetDuty
 	local := base
 	if localNanos < float64(base) {
 		local = clampDuration(time.Duration(localNanos), minimum, base)
 	}
 
+	// 第二层全局控制：所有 input 的局部周期统一乘以 governor 的 multiplier。
+	// 最终仍限制在 [minimum, base]，不会突破最小周期，也不会比原配置扫描得更慢。
 	effective := float64(local) * c.Multiplier()
 	var interval time.Duration
 	if effective >= float64(base) {
@@ -221,6 +235,7 @@ func (c *AdaptiveScanController) TotalScanDuration() time.Duration {
 }
 
 func (c *AdaptiveScanController) removeInput(inputID uint64) {
+	// Runner 完全停止后删除局部 EWMA，避免长期 Reload 积累已经失效的实例状态。
 	c.mu.Lock()
 	delete(c.inputs, inputID)
 	c.mu.Unlock()
@@ -268,6 +283,8 @@ func (c *AdaptiveScanController) Stop() {
 
 func (c *AdaptiveScanController) runGovernor(done <-chan struct{}) {
 	defer c.wg.Done()
+	// control ticker 调整全局 multiplier；snapshot ticker 只负责诊断输出，
+	// 两者分离可避免日志周期影响控制收敛速度。
 	ticker := time.NewTicker(c.controlInterval)
 	defer ticker.Stop()
 	snapshotTicker := time.NewTicker(c.snapshotInterval)
@@ -288,6 +305,7 @@ func (c *AdaptiveScanController) runGovernor(done <-chan struct{}) {
 
 func (c *AdaptiveScanController) observeSample(now time.Time, totalNanos int64) {
 	c.sampleMu.Lock()
+	// 累计值倒退表示采样基线已失效，只重置基线，不用异常窗口更新 multiplier。
 	if c.lastSampleAt.IsZero() || totalNanos < c.lastSampleTotal {
 		c.lastSampleAt = now
 		c.lastSampleTotal = totalNanos
@@ -304,6 +322,7 @@ func (c *AdaptiveScanController) observeSample(now time.Time, totalNanos int64) 
 		c.sampleMu.Unlock()
 		return
 	}
+	// 聚合占空比 = 采样窗口内所有扫描耗时增量 / 实际墙钟时间。
 	duty := float64(deltaNanos) / float64(elapsed)
 	if c.hasSmoothedDuty {
 		c.smoothedDuty = adaptiveScanEWMAAlpha*duty +
@@ -329,11 +348,14 @@ func (c *AdaptiveScanController) updateMultiplier(duty float64) {
 	}
 
 	current := c.Multiplier()
+	// 目标附近保留 15% 死区，避免扫描耗时的小幅波动导致周期频繁变化。
 	if duty >= c.targetDuty*(1-adaptiveScanDeadbandRatio) &&
 		duty <= c.targetDuty*(1+adaptiveScanDeadbandRatio) {
 		return
 	}
 
+	// 按 duty/target 的比例反推新 multiplier，再限制单次最大步长并做一次 EWMA。
+	// 这样既能在超预算时及时降频，也不会因单个异常采样突然跳到极端值。
 	target := current * duty / c.targetDuty
 	target = clampFloat(target, 1, adaptiveScanMaxMultiplier)
 	target = clampFloat(target, current/adaptiveScanMaxStepRatio, current*adaptiveScanMaxStepRatio)
@@ -358,6 +380,8 @@ func (c *AdaptiveScanController) maybeLogIntervalChange(
 		c.mu.Unlock()
 		return
 	}
+	// 首次仅在周期确实缩短或 Beats 发生兜底时打印；之后至少间隔一分钟，
+	// 且只有倍数变化或跨固定周期桶时才打印，兼顾可诊断性与日志量。
 	shouldLog := (state.lastLoggedInterval == 0 && (effective < base || requested != effective)) ||
 		(state.lastLoggedInterval != 0 &&
 			now.Sub(state.lastLogAt) >= adaptiveScanLogMinInterval &&

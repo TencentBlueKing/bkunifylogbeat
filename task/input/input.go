@@ -83,6 +83,7 @@ func GetInput(
 		}
 		in.AddOutput(f.Node)
 		in.AddTaskNode(f.Node, taskNode)
+		// 共享 input 每接入一个 Task 都追加一份元数据，日志才能还原完整任务列表。
 		utils.RegisterAdaptiveScanInput(in.runner.AdaptiveScanID(), adaptiveScanMetadataFromTask(taskCfg))
 		return in, nil
 	}
@@ -117,6 +118,7 @@ func NewInput(
 	if err != nil {
 		return nil, err
 	}
+	// Runner 创建后才有进程内唯一 AdaptiveScanID，元数据必须以该实例 ID 注册。
 	utils.RegisterAdaptiveScanInput(in.runner.AdaptiveScanID(), adaptiveScanMetadataFromTask(taskCfg))
 
 	logp.L.Infof("add input(%s) to global inputMaps", in.ID)
@@ -220,6 +222,7 @@ func (in *Input) stop() {
 		runner := in.runner
 		go func() {
 			runner.Stop() // 防止卡主reload的流程，这里改为异步，不等待input结束
+			// 必须等待 Runner 完全停止后再清理，避免在途回调重新创建已删除的控制状态。
 			utils.UnregisterAdaptiveScanInput(runner.AdaptiveScanID())
 		}()
 	})

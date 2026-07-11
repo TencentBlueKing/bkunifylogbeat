@@ -56,6 +56,7 @@ type Manager struct {
 	wg       sync.WaitGroup
 	beatDone chan struct{}
 
+	// 自适应扫描控制器由 Manager 独占管理；配置锁保证并发 Reload 时只会有一条替换链路。
 	adaptiveScan             *utils.AdaptiveScanController
 	adaptiveScanConfig       cfg.AdaptiveScanConfig
 	adaptiveScanMu           sync.Mutex
@@ -100,6 +101,7 @@ func (m *Manager) Start() error {
 
 // Stop Close manager when program quit
 func (m *Manager) Stop() error {
+	// 先卸载 hooks，再停止 Task，避免 Runner 退出期间继续调用即将销毁的控制器。
 	_ = m.configureAdaptiveScan(cfg.AdaptiveScanConfig{Enabled: false})
 	for _, t := range m.tasks {
 		t.Stop()
@@ -195,6 +197,10 @@ func (m *Manager) Reload(config cfg.Config) {
 	m.config = config
 }
 
+// configureAdaptiveScan 以完整 hooks bundle 为单位替换自适应扫描控制器。
+// 新控制器会先完成校验和启动；创建失败时直接返回，旧控制器继续工作。
+// 替换时依次卸载 hooks、断开清理通知、停止旧控制器，最后安装新控制器，
+// 确保 Interval 与 Applied 始终属于同一代配置。
 func (m *Manager) configureAdaptiveScan(config cfg.AdaptiveScanConfig) error {
 	m.adaptiveScanMu.Lock()
 	defer m.adaptiveScanMu.Unlock()
@@ -208,6 +214,7 @@ func (m *Manager) configureAdaptiveScan(config cfg.AdaptiveScanConfig) error {
 
 	var controller *utils.AdaptiveScanController
 	if config.Enabled {
+		// 先构造新实例，不提前破坏当前可用配置，避免一次无效 Reload 关闭既有能力。
 		var err error
 		controller, err = utils.NewAdaptiveScanController(utils.AdaptiveScanSettings{
 			MinScanFrequency: config.MinScanFrequency,
@@ -231,6 +238,7 @@ func (m *Manager) configureAdaptiveScan(config cfg.AdaptiveScanConfig) error {
 	if controller != nil {
 		m.adaptiveScanConfig = config
 		utils.SetActiveAdaptiveScanController(controller)
+		// Beats 最终裁决周期后通过 Applied 回传，日志记录的才是 Runner 实际等待周期。
 		m.setAdaptiveScanHooksFunc(filebeatinput.AdaptiveScanHooks{
 			Interval: controller.NextInterval,
 			Applied:  controller.ObserveApplied,

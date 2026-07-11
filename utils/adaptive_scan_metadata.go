@@ -32,6 +32,8 @@ type adaptiveScanInputMetadataState struct {
 	tasks   map[string]AdaptiveScanInputMetadata
 }
 
+// metadata registry 只服务诊断日志，按 Runner 聚合同一 input 下的多个任务；
+// active controller 则用于在 Runner 销毁时同步清理控制器中的局部计算状态。
 var adaptiveScanMetadataRegistry = struct {
 	sync.RWMutex
 	inputs map[uint64]*adaptiveScanInputMetadataState
@@ -70,6 +72,8 @@ func UnregisterAdaptiveScanTask(runnerID uint64, metadata AdaptiveScanInputMetad
 	adaptiveScanMetadataRegistry.Lock()
 	defer adaptiveScanMetadataRegistry.Unlock()
 
+	// Task 停止不等于 Runner 停止：共享 input 仍可能继续服务其他任务，
+	// 因此这里只移除当前 Task，最后一个 Task 离开时才删除 Runner 元数据。
 	state, ok := adaptiveScanMetadataRegistry.inputs[runnerID]
 	if !ok {
 		return
@@ -86,6 +90,7 @@ func UnregisterAdaptiveScanInput(runnerID uint64) {
 	delete(adaptiveScanMetadataRegistry.inputs, runnerID)
 	adaptiveScanMetadataRegistry.Unlock()
 
+	// 不在 registry 锁内调用 controller，避免把两套状态的锁顺序耦合在一起。
 	if controller := activeAdaptiveScanController.Load(); controller != nil {
 		controller.removeInput(runnerID)
 	}
