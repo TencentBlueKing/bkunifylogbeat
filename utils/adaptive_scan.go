@@ -1,0 +1,603 @@
+// Tencent is pleased to support the open source community by making bkunifylogbeat 蓝鲸日志采集器 available.
+//
+// Copyright (C) 2021 THL A29 Limited, a Tencent company. All rights reserved.
+// Licensed under the MIT License.
+
+package utils
+
+import (
+	"fmt"
+	"math"
+	"sort"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
+)
+
+const (
+	adaptiveScanEWMAAlpha        = 0.5
+	adaptiveScanDeadbandRatio    = 0.15
+	adaptiveScanMaxStepRatio     = 2.0
+	adaptiveScanMaxMultiplier    = 64.0
+	adaptiveScanInitialMultiple  = 1.0
+	adaptiveScanLogMinInterval   = time.Minute
+	adaptiveScanSnapshotInterval = 5 * time.Minute
+	adaptiveScanSnapshotTopK     = 5
+)
+
+// AdaptiveScanSettings 控制单 input 周期计算和全局扫描 CPU 预算。
+// ScanCPUPercent 表示扫描耗时占单核时间的百分比。
+type AdaptiveScanSettings struct {
+	MinScanFrequency time.Duration
+	ScanCPUPercent   float64
+	ControlInterval  time.Duration
+}
+
+type adaptiveScanInputState struct {
+	ewmaScanNanos      float64
+	lastLoggedInterval time.Duration
+	lastLogAt          time.Time
+	baseInterval       time.Duration
+	requestedInterval  time.Duration
+	effectiveInterval  time.Duration
+	lastScanDuration   time.Duration
+}
+
+// AdaptiveScanIntervalLog 表示一条经过限频的扫描周期变更记录。
+type AdaptiveScanIntervalLog struct {
+	RunnerID          uint64
+	InputID           string
+	TaskIDs           []string
+	DataIDs           []int
+	Paths             []string
+	BaseInterval      time.Duration
+	RequestedInterval time.Duration
+	EffectiveInterval time.Duration
+	Multiplier        float64
+	ScanDuration      time.Duration
+}
+
+// AdaptiveScanIntervalDistribution 是周期快照中固定桶数的扫描周期分布。
+type AdaptiveScanIntervalDistribution struct {
+	AtMinimum     int
+	UpTo1Second   int
+	UpTo2Seconds  int
+	UpTo5Seconds  int
+	Above5Seconds int
+	AtBase        int
+}
+
+// AdaptiveScanSnapshotInput 表示生效周期与基础周期比值最大的 input 之一。
+type AdaptiveScanSnapshotInput struct {
+	RunnerID          uint64
+	InputID           string
+	TaskIDs           []string
+	DataIDs           []int
+	BaseInterval      time.Duration
+	RequestedInterval time.Duration
+	EffectiveInterval time.Duration
+	ScanDuration      time.Duration
+}
+
+// AdaptiveScanSnapshot 表示一条固定大小的控制器聚合快照。
+type AdaptiveScanSnapshot struct {
+	Inputs        int
+	Shortened     int
+	Multiplier    float64
+	ScanDuty      float64
+	TargetDuty    float64
+	Intervals     AdaptiveScanIntervalDistribution
+	SlowestInputs []AdaptiveScanSnapshotInput
+}
+
+// AdaptiveScanController 计算每个 input 的扫描周期，并维护限制聚合扫描开销的全局乘数。
+type AdaptiveScanController struct {
+	minScanFrequency time.Duration
+	controlInterval  time.Duration
+	targetDuty       float64
+
+	mu     sync.Mutex
+	inputs map[uint64]*adaptiveScanInputState
+
+	totalScanNanos atomic.Int64
+	multiplierBits atomic.Uint64
+	lastDutyBits   atomic.Uint64
+
+	sampleMu        sync.Mutex
+	lastSampleAt    time.Time
+	lastSampleTotal int64
+	smoothedDuty    float64
+	hasSmoothedDuty bool
+
+	lifecycleMu sync.Mutex
+	running     bool
+	done        chan struct{}
+	wg          sync.WaitGroup
+
+	now               func() time.Time
+	logIntervalChange func(AdaptiveScanIntervalLog)
+	snapshotInterval  time.Duration
+	logSnapshot       func(AdaptiveScanSnapshot)
+	logInputSnapshots func([]AdaptiveScanIntervalLog)
+}
+
+// NewAdaptiveScanController 创建自适应扫描控制器。
+func NewAdaptiveScanController(settings AdaptiveScanSettings) (*AdaptiveScanController, error) {
+	if settings.MinScanFrequency <= 0 {
+		return nil, fmt.Errorf("min scan frequency must be greater than 0")
+	}
+	if settings.ScanCPUPercent <= 0 || settings.ScanCPUPercent > 100 ||
+		math.IsNaN(settings.ScanCPUPercent) || math.IsInf(settings.ScanCPUPercent, 0) {
+		return nil, fmt.Errorf("scan CPU percent must be greater than 0 and no more than 100")
+	}
+	if settings.ControlInterval <= 0 {
+		return nil, fmt.Errorf("control interval must be greater than 0")
+	}
+
+	controller := &AdaptiveScanController{
+		minScanFrequency:  settings.MinScanFrequency,
+		controlInterval:   settings.ControlInterval,
+		targetDuty:        settings.ScanCPUPercent / 100,
+		inputs:            make(map[uint64]*adaptiveScanInputState),
+		now:               time.Now,
+		logIntervalChange: logAdaptiveScanIntervalChange,
+		snapshotInterval:  adaptiveScanSnapshotInterval,
+		logSnapshot:       logAdaptiveScanSnapshot,
+		logInputSnapshots: logAdaptiveScanInputSnapshots,
+	}
+	controller.setMultiplier(adaptiveScanInitialMultiple)
+	return controller, nil
+}
+
+// NextInterval 记录最新扫描开销并计算候选周期。
+// 配置周期始终是上限，因此开启自适应后不会比原配置扫描得更慢。
+func (c *AdaptiveScanController) NextInterval(inputID uint64, base, scanDuration time.Duration) time.Duration {
+	if base <= 0 || scanDuration <= 0 {
+		return base
+	}
+
+	c.totalScanNanos.Add(int64(scanDuration))
+
+	c.mu.Lock()
+	state, ok := c.inputs[inputID]
+	if !ok {
+		state = &adaptiveScanInputState{ewmaScanNanos: float64(scanDuration)}
+		c.inputs[inputID] = state
+	} else {
+		state.ewmaScanNanos = adaptiveScanEWMAAlpha*float64(scanDuration) +
+			(1-adaptiveScanEWMAAlpha)*state.ewmaScanNanos
+	}
+	ewmaScanNanos := state.ewmaScanNanos
+	c.mu.Unlock()
+
+	minimum := c.minScanFrequency
+	if base < minimum {
+		minimum = base
+	}
+
+	localNanos := ewmaScanNanos / c.targetDuty
+	local := base
+	if localNanos < float64(base) {
+		local = clampDuration(time.Duration(localNanos), minimum, base)
+	}
+
+	effective := float64(local) * c.Multiplier()
+	var interval time.Duration
+	if effective >= float64(base) {
+		interval = base
+	} else {
+		interval = clampDuration(time.Duration(effective), minimum, base)
+	}
+
+	return interval
+}
+
+// ObserveApplied 接收 Beats 归一化后的最终扫描周期。
+// 日志与快照只使用 applied，确保观测值和 Runner 实际等待时间一致。
+func (c *AdaptiveScanController) ObserveApplied(
+	inputID uint64,
+	base, requested, applied, scanDuration time.Duration,
+) {
+	c.mu.Lock()
+	state := c.inputs[inputID]
+	if state == nil {
+		c.mu.Unlock()
+		return
+	}
+	state.baseInterval = base
+	state.requestedInterval = requested
+	state.effectiveInterval = applied
+	state.lastScanDuration = scanDuration
+	c.mu.Unlock()
+
+	c.maybeLogIntervalChange(inputID, base, requested, applied, scanDuration)
+}
+
+// TotalScanDuration 返回累计实测扫描耗时。
+func (c *AdaptiveScanController) TotalScanDuration() time.Duration {
+	return time.Duration(c.totalScanNanos.Load())
+}
+
+func (c *AdaptiveScanController) removeInput(inputID uint64) {
+	c.mu.Lock()
+	delete(c.inputs, inputID)
+	c.mu.Unlock()
+}
+
+// Multiplier 返回当前全局扫描周期乘数。
+func (c *AdaptiveScanController) Multiplier() float64 {
+	return math.Float64frombits(c.multiplierBits.Load())
+}
+
+// Start 启动聚合扫描占空比的周期采样。
+func (c *AdaptiveScanController) Start() {
+	c.lifecycleMu.Lock()
+	defer c.lifecycleMu.Unlock()
+	if c.running {
+		return
+	}
+
+	c.sampleMu.Lock()
+	c.lastSampleAt = time.Now()
+	c.lastSampleTotal = c.totalScanNanos.Load()
+	c.smoothedDuty = 0
+	c.hasSmoothedDuty = false
+	c.lastDutyBits.Store(math.Float64bits(0))
+	c.sampleMu.Unlock()
+
+	c.done = make(chan struct{})
+	c.running = true
+	c.wg.Add(1)
+	go c.runGovernor(c.done)
+}
+
+// Stop 停止聚合扫描占空比的周期采样。
+func (c *AdaptiveScanController) Stop() {
+	c.lifecycleMu.Lock()
+	defer c.lifecycleMu.Unlock()
+	if !c.running {
+		return
+	}
+
+	close(c.done)
+	c.running = false
+	c.wg.Wait()
+}
+
+func (c *AdaptiveScanController) runGovernor(done <-chan struct{}) {
+	defer c.wg.Done()
+	ticker := time.NewTicker(c.controlInterval)
+	defer ticker.Stop()
+	snapshotTicker := time.NewTicker(c.snapshotInterval)
+	defer snapshotTicker.Stop()
+
+	for {
+		select {
+		case <-done:
+			return
+		case now := <-ticker.C:
+			c.observeSample(now, c.totalScanNanos.Load())
+		case <-snapshotTicker.C:
+			c.logSnapshot(c.snapshot())
+			c.logInputSnapshots(c.inputSnapshots())
+		}
+	}
+}
+
+func (c *AdaptiveScanController) observeSample(now time.Time, totalNanos int64) {
+	c.sampleMu.Lock()
+	if c.lastSampleAt.IsZero() || totalNanos < c.lastSampleTotal {
+		c.lastSampleAt = now
+		c.lastSampleTotal = totalNanos
+		c.sampleMu.Unlock()
+		return
+	}
+
+	elapsed := now.Sub(c.lastSampleAt)
+	deltaNanos := totalNanos - c.lastSampleTotal
+	c.lastSampleAt = now
+	c.lastSampleTotal = totalNanos
+
+	if elapsed <= 0 {
+		c.sampleMu.Unlock()
+		return
+	}
+	duty := float64(deltaNanos) / float64(elapsed)
+	if c.hasSmoothedDuty {
+		c.smoothedDuty = adaptiveScanEWMAAlpha*duty +
+			(1-adaptiveScanEWMAAlpha)*c.smoothedDuty
+	} else {
+		c.smoothedDuty = duty
+		c.hasSmoothedDuty = true
+	}
+	smoothedDuty := c.smoothedDuty
+	c.sampleMu.Unlock()
+
+	c.lastDutyBits.Store(math.Float64bits(smoothedDuty))
+	c.updateMultiplier(smoothedDuty)
+}
+
+func (c *AdaptiveScanController) setMultiplier(value float64) {
+	c.multiplierBits.Store(math.Float64bits(value))
+}
+
+func (c *AdaptiveScanController) updateMultiplier(duty float64) {
+	if duty < 0 || math.IsNaN(duty) || math.IsInf(duty, 0) {
+		return
+	}
+
+	current := c.Multiplier()
+	if duty >= c.targetDuty*(1-adaptiveScanDeadbandRatio) &&
+		duty <= c.targetDuty*(1+adaptiveScanDeadbandRatio) {
+		return
+	}
+
+	target := current * duty / c.targetDuty
+	target = clampFloat(target, 1, adaptiveScanMaxMultiplier)
+	target = clampFloat(target, current/adaptiveScanMaxStepRatio, current*adaptiveScanMaxStepRatio)
+
+	next := adaptiveScanEWMAAlpha*target + (1-adaptiveScanEWMAAlpha)*current
+	c.setMultiplier(clampFloat(next, 1, adaptiveScanMaxMultiplier))
+}
+
+func (c *AdaptiveScanController) maybeLogIntervalChange(
+	runnerID uint64,
+	base, requested, effective, scanDuration time.Duration,
+) {
+	metadata, ok := adaptiveScanInputMetadata(runnerID)
+	if !ok {
+		return
+	}
+
+	now := c.now()
+	c.mu.Lock()
+	state := c.inputs[runnerID]
+	if state == nil {
+		c.mu.Unlock()
+		return
+	}
+	shouldLog := (state.lastLoggedInterval == 0 && (effective < base || requested != effective)) ||
+		(state.lastLoggedInterval != 0 &&
+			now.Sub(state.lastLogAt) >= adaptiveScanLogMinInterval &&
+			isMeaningfulAdaptiveScanIntervalChange(state.lastLoggedInterval, effective, base))
+	if shouldLog {
+		state.lastLoggedInterval = effective
+		state.lastLogAt = now
+	}
+	c.mu.Unlock()
+	if !shouldLog {
+		return
+	}
+
+	c.logIntervalChange(AdaptiveScanIntervalLog{
+		RunnerID:          runnerID,
+		InputID:           metadata.InputID,
+		TaskIDs:           metadata.TaskIDs,
+		DataIDs:           metadata.DataIDs,
+		Paths:             metadata.Paths,
+		BaseInterval:      base,
+		RequestedInterval: requested,
+		EffectiveInterval: effective,
+		Multiplier:        c.Multiplier(),
+		ScanDuration:      scanDuration,
+	})
+}
+
+func (c *AdaptiveScanController) snapshot() AdaptiveScanSnapshot {
+	type candidate struct {
+		runnerID uint64
+		score    float64
+		state    adaptiveScanInputState
+	}
+
+	snapshot := AdaptiveScanSnapshot{
+		Multiplier: c.Multiplier(),
+		ScanDuty:   math.Float64frombits(c.lastDutyBits.Load()),
+		TargetDuty: c.targetDuty,
+	}
+	var candidates []candidate
+
+	c.mu.Lock()
+	snapshot.Inputs = len(c.inputs)
+	for runnerID, state := range c.inputs {
+		if state.baseInterval <= 0 || state.effectiveInterval <= 0 {
+			continue
+		}
+		if state.effectiveInterval < state.baseInterval {
+			snapshot.Shortened++
+		}
+
+		minimum := c.minScanFrequency
+		if state.baseInterval < minimum {
+			minimum = state.baseInterval
+		}
+		switch {
+		case state.effectiveInterval >= state.baseInterval:
+			snapshot.Intervals.AtBase++
+		case state.effectiveInterval <= minimum:
+			snapshot.Intervals.AtMinimum++
+		case state.effectiveInterval <= time.Second:
+			snapshot.Intervals.UpTo1Second++
+		case state.effectiveInterval <= 2*time.Second:
+			snapshot.Intervals.UpTo2Seconds++
+		case state.effectiveInterval <= 5*time.Second:
+			snapshot.Intervals.UpTo5Seconds++
+		default:
+			snapshot.Intervals.Above5Seconds++
+		}
+
+		candidates = append(candidates, candidate{
+			runnerID: runnerID,
+			score:    float64(state.effectiveInterval) / float64(state.baseInterval),
+			state:    *state,
+		})
+	}
+	c.mu.Unlock()
+
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].score == candidates[j].score {
+			return candidates[i].runnerID < candidates[j].runnerID
+		}
+		return candidates[i].score > candidates[j].score
+	})
+	if len(candidates) > adaptiveScanSnapshotTopK {
+		candidates = candidates[:adaptiveScanSnapshotTopK]
+	}
+
+	for _, item := range candidates {
+		record := AdaptiveScanSnapshotInput{
+			RunnerID:          item.runnerID,
+			BaseInterval:      item.state.baseInterval,
+			RequestedInterval: item.state.requestedInterval,
+			EffectiveInterval: item.state.effectiveInterval,
+			ScanDuration:      item.state.lastScanDuration,
+		}
+		if metadata, ok := adaptiveScanInputMetadata(item.runnerID); ok {
+			record.InputID = metadata.InputID
+			record.TaskIDs = metadata.TaskIDs
+			record.DataIDs = metadata.DataIDs
+		}
+		snapshot.SlowestInputs = append(snapshot.SlowestInputs, record)
+	}
+	return snapshot
+}
+
+func (c *AdaptiveScanController) inputSnapshots() []AdaptiveScanIntervalLog {
+	type stateSnapshot struct {
+		runnerID uint64
+		state    adaptiveScanInputState
+	}
+
+	c.mu.Lock()
+	states := make([]stateSnapshot, 0, len(c.inputs))
+	for runnerID, state := range c.inputs {
+		states = append(states, stateSnapshot{runnerID: runnerID, state: *state})
+	}
+	c.mu.Unlock()
+
+	sort.Slice(states, func(i, j int) bool {
+		return states[i].runnerID < states[j].runnerID
+	})
+	records := make([]AdaptiveScanIntervalLog, 0, len(states))
+	for _, item := range states {
+		record := AdaptiveScanIntervalLog{
+			RunnerID:          item.runnerID,
+			BaseInterval:      item.state.baseInterval,
+			RequestedInterval: item.state.requestedInterval,
+			EffectiveInterval: item.state.effectiveInterval,
+			Multiplier:        c.Multiplier(),
+			ScanDuration:      item.state.lastScanDuration,
+		}
+		if metadata, ok := adaptiveScanInputMetadata(item.runnerID); ok {
+			record.InputID = metadata.InputID
+			record.TaskIDs = metadata.TaskIDs
+			record.DataIDs = metadata.DataIDs
+			record.Paths = metadata.Paths
+		}
+		records = append(records, record)
+	}
+	return records
+}
+
+func isMeaningfulAdaptiveScanIntervalChange(previous, current, base time.Duration) bool {
+	if previous <= 0 || current <= 0 {
+		return true
+	}
+	larger, smaller := previous, current
+	if current > previous {
+		larger, smaller = current, previous
+	}
+	if larger >= 2*smaller {
+		return true
+	}
+	return adaptiveScanIntervalBucket(previous, base) != adaptiveScanIntervalBucket(current, base)
+}
+
+func adaptiveScanIntervalBucket(interval, base time.Duration) int {
+	switch {
+	case interval >= base:
+		return 5
+	case interval <= 500*time.Millisecond:
+		return 0
+	case interval <= time.Second:
+		return 1
+	case interval <= 2*time.Second:
+		return 2
+	case interval <= 5*time.Second:
+		return 3
+	default:
+		return 4
+	}
+}
+
+func logAdaptiveScanIntervalChange(record AdaptiveScanIntervalLog) {
+	logp.L.Infof(
+		"adaptive scan interval changed: runner_id=%d input_id=%s task_ids=%v data_ids=%v paths=%v "+
+			"base=%s requested_interval=%s effective_interval=%s multiplier=%.3f scan_duration=%s",
+		record.RunnerID,
+		record.InputID,
+		record.TaskIDs,
+		record.DataIDs,
+		record.Paths,
+		record.BaseInterval,
+		record.RequestedInterval,
+		record.EffectiveInterval,
+		record.Multiplier,
+		record.ScanDuration,
+	)
+}
+
+func logAdaptiveScanSnapshot(snapshot AdaptiveScanSnapshot) {
+	logp.L.Infof(
+		"adaptive scan snapshot: inputs=%d shortened=%d multiplier=%.3f scan_duty=%.4f "+
+			"target_duty=%.4f intervals=%+v slowest_inputs=%+v",
+		snapshot.Inputs,
+		snapshot.Shortened,
+		snapshot.Multiplier,
+		snapshot.ScanDuty,
+		snapshot.TargetDuty,
+		snapshot.Intervals,
+		snapshot.SlowestInputs,
+	)
+}
+
+func logAdaptiveScanInputSnapshots(records []AdaptiveScanIntervalLog) {
+	for _, record := range records {
+		logp.L.Debugf(
+			"adaptive scan input snapshot: runner_id=%d input_id=%s task_ids=%v data_ids=%v paths=%v "+
+				"base=%s requested_interval=%s effective_interval=%s multiplier=%.3f scan_duration=%s",
+			record.RunnerID,
+			record.InputID,
+			record.TaskIDs,
+			record.DataIDs,
+			record.Paths,
+			record.BaseInterval,
+			record.RequestedInterval,
+			record.EffectiveInterval,
+			record.Multiplier,
+			record.ScanDuration,
+		)
+	}
+}
+
+func clampDuration(value, minimum, maximum time.Duration) time.Duration {
+	if value < minimum {
+		return minimum
+	}
+	if value > maximum {
+		return maximum
+	}
+	return value
+}
+
+func clampFloat(value, minimum, maximum float64) float64 {
+	if value < minimum {
+		return minimum
+	}
+	if value > maximum {
+		return maximum
+	}
+	return value
+}

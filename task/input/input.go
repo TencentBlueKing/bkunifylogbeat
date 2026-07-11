@@ -83,6 +83,7 @@ func GetInput(
 		}
 		in.AddOutput(f.Node)
 		in.AddTaskNode(f.Node, taskNode)
+		utils.RegisterAdaptiveScanInput(in.runner.AdaptiveScanID(), adaptiveScanMetadataFromTask(taskCfg))
 		return in, nil
 	}
 
@@ -116,6 +117,7 @@ func NewInput(
 	if err != nil {
 		return nil, err
 	}
+	utils.RegisterAdaptiveScanInput(in.runner.AdaptiveScanID(), adaptiveScanMetadataFromTask(taskCfg))
 
 	logp.L.Infof("add input(%s) to global inputMaps", in.ID)
 	mtx.Lock()
@@ -212,8 +214,33 @@ func (in *Input) Run() {
 //  2. 当End的channel被主动关闭后
 func (in *Input) stop() {
 	in.stopOnce.Do(func() {
-		go in.runner.Stop() // 防止卡主reload的流程，这里改为异步，不等待input结束
+		if in.runner == nil {
+			return
+		}
+		runner := in.runner
+		go func() {
+			runner.Stop() // 防止卡主reload的流程，这里改为异步，不等待input结束
+			utils.UnregisterAdaptiveScanInput(runner.AdaptiveScanID())
+		}()
 	})
+}
+
+func adaptiveScanMetadataFromTask(taskConfig *config.TaskConfig) utils.AdaptiveScanInputMetadata {
+	return utils.AdaptiveScanInputMetadata{
+		InputID: taskConfig.InputID,
+		TaskID:  taskConfig.ID,
+		DataID:  taskConfig.DataID,
+		Paths:   append([]string(nil), taskConfig.Paths...),
+	}
+}
+
+// UnregisterAdaptiveScanTask 从当前 Runner 的诊断元数据中移除指定任务，
+// 同时保留共享该 Runner 的其他任务。
+func (in *Input) UnregisterAdaptiveScanTask(taskConfig *config.TaskConfig) {
+	if in.runner == nil || taskConfig == nil {
+		return
+	}
+	utils.UnregisterAdaptiveScanTask(in.runner.AdaptiveScanID(), adaptiveScanMetadataFromTask(taskConfig))
 }
 
 // Reload : Input不做reload处理，配置如果有变化，直接删除新建

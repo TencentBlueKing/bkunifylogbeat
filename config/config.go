@@ -24,6 +24,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
@@ -42,6 +43,8 @@ type Config struct {
 	MaxCpuLimit int `config:"max_cpu_limit"` // 最大CPU限制，仅在某些极端情况下开启
 	// CpuCheckTimes
 	CpuCheckTimes int `config:"cpu_check_times"` // 1秒内检测多少次CPU, 可选值，[1-10]
+	// AdaptiveScan 动态扫描周期配置
+	AdaptiveScan AdaptiveScanConfig `config:"adaptive_scan"`
 
 	// SecConfigs sec config path and pattern
 	SecConfigs []SecConfigItem `config:"multi_config"`
@@ -61,6 +64,31 @@ type Config struct {
 
 	// 采集状态的唯一标识符
 	FileIdentifier string `config:"file_identifier"`
+}
+
+// AdaptiveScanConfig 控制扫描周期自适应及其全局 CPU 预算。
+type AdaptiveScanConfig struct {
+	Enabled          bool          `config:"enabled"`
+	MinScanFrequency time.Duration `config:"min_scan_frequency"`
+	ScanCPUPercent   float64       `config:"scan_cpu_percent"`
+	ControlInterval  time.Duration `config:"control_interval"`
+}
+
+func (c AdaptiveScanConfig) Validate() error {
+	if !c.Enabled {
+		return nil
+	}
+	if c.MinScanFrequency <= 0 {
+		return fmt.Errorf("adaptive_scan.min_scan_frequency must be greater than 0")
+	}
+	if c.ScanCPUPercent <= 0 || c.ScanCPUPercent > 100 ||
+		math.IsNaN(c.ScanCPUPercent) || math.IsInf(c.ScanCPUPercent, 0) {
+		return fmt.Errorf("adaptive_scan.scan_cpu_percent must be greater than 0 and no more than 100")
+	}
+	if c.ControlInterval <= 0 {
+		return fmt.Errorf("adaptive_scan.control_interval must be greater than 0")
+	}
+	return nil
 }
 
 // 从配置目录
@@ -109,6 +137,12 @@ func Parse(cfg *beat.Config) (Config, error) {
 		BufferTimeout: 1,
 		MaxCpuLimit:   -1,
 		CpuCheckTimes: 10,
+		AdaptiveScan: AdaptiveScanConfig{
+			Enabled:          false,
+			MinScanFrequency: 500 * time.Millisecond,
+			ScanCPUPercent:   5,
+			ControlInterval:  3 * time.Second,
+		},
 		Registry: Registry{
 			FlushTimeout: 1 * time.Second,
 			GcFrequency:  1 * time.Minute,
@@ -121,6 +155,9 @@ func Parse(cfg *beat.Config) (Config, error) {
 	err := cfg.Unpack(&config)
 	if err != nil {
 		return config, fmt.Errorf("unpack config error, %v", err)
+	}
+	if err = config.AdaptiveScan.Validate(); err != nil {
+		return config, err
 	}
 	logp.L.Infof("load config: %+v", config)
 
