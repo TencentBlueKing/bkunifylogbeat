@@ -44,8 +44,8 @@ func TestParseAdaptiveScanDefaults(t *testing.T) {
 
 	cfg, err := Parse(raw)
 	assert.NoError(t, err)
-	assert.False(t, cfg.AdaptiveScan.Enabled)
-	assert.Equal(t, 500*time.Millisecond, cfg.AdaptiveScan.MinScanFrequency)
+	assert.True(t, cfg.AdaptiveScan.Enabled)
+	assert.Equal(t, time.Second, cfg.AdaptiveScan.MinScanFrequency)
 	assert.Equal(t, float64(5), cfg.AdaptiveScan.ScanCPUPercent)
 	assert.Equal(t, 3*time.Second, cfg.AdaptiveScan.ControlInterval)
 }
