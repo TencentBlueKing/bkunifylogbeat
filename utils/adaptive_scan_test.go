@@ -65,32 +65,141 @@ func TestAdaptiveScanControllerClampsToConfiguredBounds(t *testing.T) {
 
 func TestAdaptiveScanControllerMultiplierNeverExceedsBase(t *testing.T) {
 	controller := newTestAdaptiveScanController(t)
-	controller.updateMultiplier(20 * controller.targetDuty)
+	controller.NextInterval(1, time.Second, 40*time.Millisecond)
+	controller.setMultiplier(20)
 
 	got := controller.NextInterval(1, time.Second, 40*time.Millisecond)
 
 	assert.Equal(t, time.Second, got)
 }
 
-func TestAdaptiveScanGovernorDeadbandAndStepLimit(t *testing.T) {
+func TestAdaptiveScanGovernorDeadband(t *testing.T) {
 	controller := newTestAdaptiveScanController(t)
+	for runnerID := uint64(1); runnerID <= 100; runnerID++ {
+		nextAndObserve(controller, runnerID, 300*time.Second, 10*time.Millisecond)
+	}
+	controller.setMultiplier(40)
 
-	controller.updateMultiplier(controller.targetDuty * 1.10)
+	controller.updateMultiplier()
+
+	assert.Equal(t, float64(40), controller.Multiplier())
+}
+
+func TestAdaptiveScanGovernorConvergesWithOneHundredInputs(t *testing.T) {
+	controller, err := NewAdaptiveScanController(AdaptiveScanSettings{
+		MinScanFrequency: time.Second,
+		ScanCPUPercent:   5,
+		ControlInterval:  3 * time.Second,
+	})
+	assert.NoError(t, err)
+
+	const inputs = 100
+	base := 300 * time.Second
+	scanDuration := 10 * time.Millisecond
+	for runnerID := uint64(1); runnerID <= inputs; runnerID++ {
+		nextAndObserve(controller, runnerID, base, scanDuration)
+	}
+
+	for range 2 {
+		controller.updateMultiplier()
+	}
+
+	assert.InDelta(t, 20, controller.Multiplier(), 0.1)
+	interval := controller.NextInterval(1, base, scanDuration)
+	assert.InDelta(t, 20*time.Second, interval, float64(time.Millisecond))
+	assert.InDelta(t, controller.targetDuty, float64(inputs)*float64(scanDuration)/float64(interval), 0.0001)
+}
+
+func TestAdaptiveScanGovernorConvergesAboveLegacyCap(t *testing.T) {
+	controller, err := NewAdaptiveScanController(AdaptiveScanSettings{
+		MinScanFrequency: time.Second,
+		ScanCPUPercent:   5,
+		ControlInterval:  3 * time.Second,
+	})
+	assert.NoError(t, err)
+
+	const inputs = 1000
+	base := 300 * time.Second
+	scanDuration := 10 * time.Millisecond
+	for runnerID := uint64(1); runnerID <= inputs; runnerID++ {
+		nextAndObserve(controller, runnerID, base, scanDuration)
+	}
+
+	for range 3 {
+		controller.updateMultiplier()
+	}
+
+	assert.InDelta(t, 200, controller.Multiplier(), 0.1)
+	assert.Greater(t, controller.Multiplier(), float64(64))
+	interval := controller.NextInterval(1, base, scanDuration)
+	assert.InDelta(t, 200*time.Second, interval, float64(time.Millisecond))
+	assert.InDelta(t, controller.targetDuty, float64(inputs)*float64(scanDuration)/float64(interval), 0.0001)
+}
+
+func TestAdaptiveScanGovernorStopsAtDynamicLimitWhenBudgetIsImpossible(t *testing.T) {
+	controller, err := NewAdaptiveScanController(AdaptiveScanSettings{
+		MinScanFrequency: time.Second,
+		ScanCPUPercent:   5,
+		ControlInterval:  3 * time.Second,
+	})
+	assert.NoError(t, err)
+
+	const inputs = 1000
+	base := 100 * time.Second
+	scanDuration := 10 * time.Millisecond
+	for runnerID := uint64(1); runnerID <= inputs; runnerID++ {
+		nextAndObserve(controller, runnerID, base, scanDuration)
+	}
+
+	for range 5 {
+		controller.updateMultiplier()
+	}
+
+	assert.InDelta(t, 100, controller.Multiplier(), 0.1)
+	assert.Equal(t, base, controller.NextInterval(1, base, scanDuration))
+	snapshot := controller.snapshot()
+	assert.True(t, snapshot.BudgetSaturated)
+	assert.InDelta(t, 0.10, snapshot.MinimumPossibleDuty, 0.0001)
+}
+
+func TestAdaptiveScanGovernorResetsWithoutActiveInputs(t *testing.T) {
+	controller := newTestAdaptiveScanController(t)
+	for runnerID := uint64(1); runnerID <= 100; runnerID++ {
+		controller.NextInterval(runnerID, 10*time.Second, 10*time.Millisecond)
+	}
+	controller.updateMultiplier()
+	assert.Greater(t, controller.Multiplier(), float64(1))
+
+	for runnerID := uint64(1); runnerID <= 100; runnerID++ {
+		controller.removeInput(runnerID)
+	}
+	controller.updateMultiplier()
+
 	assert.Equal(t, float64(1), controller.Multiplier())
-
-	controller.updateMultiplier(controller.targetDuty * 4)
-	assert.InDelta(t, 1.5, controller.Multiplier(), 0.0001)
+	assert.False(t, controller.snapshot().BudgetSaturated)
 }
 
 func TestAdaptiveScanGovernorRecoversTowardOne(t *testing.T) {
-	controller := newTestAdaptiveScanController(t)
-	controller.updateMultiplier(controller.targetDuty * 4)
-	controller.updateMultiplier(controller.targetDuty * 4)
+	controller, err := NewAdaptiveScanController(AdaptiveScanSettings{
+		MinScanFrequency: time.Second,
+		ScanCPUPercent:   5,
+		ControlInterval:  3 * time.Second,
+	})
+	assert.NoError(t, err)
+	for runnerID := uint64(1); runnerID <= 100; runnerID++ {
+		nextAndObserve(controller, runnerID, 300*time.Second, 10*time.Millisecond)
+	}
+	controller.updateMultiplier()
+	controller.updateMultiplier()
 	before := controller.Multiplier()
 
-	controller.updateMultiplier(controller.targetDuty * 0.1)
+	for runnerID := uint64(51); runnerID <= 100; runnerID++ {
+		controller.removeInput(runnerID)
+	}
+	controller.updateMultiplier()
 
 	assert.Less(t, controller.Multiplier(), before)
+	assert.GreaterOrEqual(t, controller.Multiplier(), float64(10))
 	assert.GreaterOrEqual(t, controller.Multiplier(), float64(1))
 }
 
@@ -101,7 +210,8 @@ func TestAdaptiveScanGovernorSamplesAccumulatedDuty(t *testing.T) {
 	controller.observeSample(start, 0)
 	controller.observeSample(start.Add(time.Second), int64(200*time.Millisecond))
 
-	assert.InDelta(t, 1.5, controller.Multiplier(), 0.0001)
+	assert.InDelta(t, 0.2, math.Float64frombits(controller.lastDutyBits.Load()), 0.0001)
+	assert.Equal(t, float64(1), controller.Multiplier())
 }
 
 func TestAdaptiveScanGovernorSmoothsAggregateDuty(t *testing.T) {
@@ -113,7 +223,7 @@ func TestAdaptiveScanGovernorSmoothsAggregateDuty(t *testing.T) {
 	controller.observeSample(start.Add(2*time.Second), int64(200*time.Millisecond))
 
 	assert.InDelta(t, 0.1, math.Float64frombits(controller.lastDutyBits.Load()), 0.0001)
-	assert.Greater(t, controller.Multiplier(), 1.5)
+	assert.Equal(t, float64(1), controller.Multiplier())
 }
 
 func TestAdaptiveScanGovernorStartStopIsIdempotent(t *testing.T) {
@@ -124,9 +234,11 @@ func TestAdaptiveScanGovernorStartStopIsIdempotent(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
+	for runnerID := uint64(1); runnerID <= 100; runnerID++ {
+		controller.NextInterval(runnerID, 300*time.Second, 10*time.Millisecond)
+	}
 	controller.Start()
 	controller.Start()
-	controller.NextInterval(1, 10*time.Second, 100*time.Millisecond)
 
 	deadline := time.Now().Add(time.Second)
 	for controller.Multiplier() == 1 && time.Now().Before(deadline) {

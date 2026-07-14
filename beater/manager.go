@@ -201,6 +201,8 @@ func (m *Manager) Reload(config cfg.Config) {
 // 新控制器会先完成校验和启动；创建失败时直接返回，旧控制器继续工作。
 // 替换时依次卸载 hooks、断开清理通知、停止旧控制器，最后安装新控制器，
 // 确保 Interval 与 Applied 始终属于同一代配置。
+// 已经进入等待的 Runner 不会被 Reload 唤醒；当前等待到期并完成扫描后，
+// Runner 才读取新 hooks 计算后续周期，这是自适应配置约定的下一轮生效语义。
 func (m *Manager) configureAdaptiveScan(config cfg.AdaptiveScanConfig) error {
 	m.adaptiveScanMu.Lock()
 	defer m.adaptiveScanMu.Unlock()

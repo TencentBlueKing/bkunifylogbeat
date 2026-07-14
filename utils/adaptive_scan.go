@@ -17,14 +17,19 @@ import (
 )
 
 const (
-	// 同一个平滑系数同时用于单 input 扫描耗时和全局占空比，避免瞬时抖动直接改变周期。
+	// 单 input 扫描耗时 EWMA 参与控制；聚合占空比 EWMA 仅用于诊断快照。
 	adaptiveScanEWMAAlpha = 0.5
 	// 占空比落在目标值上下 15% 时不调整，防止 multiplier 在目标附近来回振荡。
 	adaptiveScanDeadbandRatio = 0.15
-	// 每轮控制将 multiplier 限制在当前值的 1/2 到 2 倍之间，并限制其最终上限。
-	adaptiveScanMaxStepRatio    = 2.0
-	adaptiveScanMaxMultiplier   = 64.0
-	adaptiveScanInitialMultiple = 1.0
+	// 超预算越严重，升档步长越大；恢复时保持保守，避免负载抖动导致周期骤降。
+	adaptiveScanNormalGrowthRatio    = 2.0
+	adaptiveScanModerateGrowthRatio  = 4.0
+	adaptiveScanEmergencyGrowthRatio = 8.0
+	adaptiveScanModerateDutyRatio    = 2.0
+	adaptiveScanEmergencyDutyRatio   = 8.0
+	adaptiveScanRecoveryRatio        = 0.75
+	adaptiveScanSearchIterations     = 60
+	adaptiveScanInitialMultiple      = 1.0
 	// 变更日志按 input 限频，聚合快照则提供固定周期的全局视图。
 	adaptiveScanLogMinInterval   = time.Minute
 	adaptiveScanSnapshotInterval = 5 * time.Minute
@@ -44,6 +49,7 @@ type adaptiveScanInputState struct {
 	lastLoggedInterval time.Duration
 	lastLogAt          time.Time
 	baseInterval       time.Duration
+	localInterval      time.Duration
 	requestedInterval  time.Duration
 	effectiveInterval  time.Duration
 	lastScanDuration   time.Duration
@@ -87,13 +93,17 @@ type AdaptiveScanSnapshotInput struct {
 
 // AdaptiveScanSnapshot 表示一条固定大小的控制器聚合快照。
 type AdaptiveScanSnapshot struct {
-	Inputs        int
-	Shortened     int
-	Multiplier    float64
-	ScanDuty      float64
-	TargetDuty    float64
-	Intervals     AdaptiveScanIntervalDistribution
-	SlowestInputs []AdaptiveScanSnapshotInput
+	Inputs     int
+	Shortened  int
+	Multiplier float64
+	ScanDuty   float64
+	TargetDuty float64
+	// MinimumPossibleDuty 是所有活跃 input 都退回基础周期后的最低聚合扫描占空比。
+	MinimumPossibleDuty float64
+	// BudgetSaturated 表示基础周期上限使目标预算无法满足。
+	BudgetSaturated bool
+	Intervals       AdaptiveScanIntervalDistribution
+	SlowestInputs   []AdaptiveScanSnapshotInput
 }
 
 // AdaptiveScanController 计算每个 input 的扫描周期，并维护限制聚合扫描开销的全局乘数。
@@ -108,9 +118,11 @@ type AdaptiveScanController struct {
 
 	// 热路径与 governor 通过原子值交换累计耗时、全局 multiplier 和最近占空比，
 	// 避免每个 Runner 在计算周期时争用 governor 的采样锁。
-	totalScanNanos atomic.Int64
-	multiplierBits atomic.Uint64
-	lastDutyBits   atomic.Uint64
+	totalScanNanos  atomic.Int64
+	multiplierBits  atomic.Uint64
+	lastDutyBits    atomic.Uint64
+	minimumDutyBits atomic.Uint64
+	budgetSaturated atomic.Bool
 
 	// sampleMu 保护相邻采样点及占空比 EWMA，仅由 governor 周期更新。
 	sampleMu        sync.Mutex
@@ -180,8 +192,6 @@ func (c *AdaptiveScanController) NextInterval(inputID uint64, base, scanDuration
 			(1-adaptiveScanEWMAAlpha)*state.ewmaScanNanos
 	}
 	ewmaScanNanos := state.ewmaScanNanos
-	c.mu.Unlock()
-
 	minimum := c.minScanFrequency
 	if base < minimum {
 		minimum = base
@@ -194,6 +204,11 @@ func (c *AdaptiveScanController) NextInterval(inputID uint64, base, scanDuration
 	if localNanos < float64(base) {
 		local = clampDuration(time.Duration(localNanos), minimum, base)
 	}
+	// governor 使用各 input 的稳态成本模型求解全局 multiplier；
+	// base/local 决定该 input 退回原配置周期前仍有多少调节空间。
+	state.baseInterval = base
+	state.localInterval = local
+	c.mu.Unlock()
 
 	// 第二层全局控制：所有 input 的局部周期统一乘以 governor 的 multiplier。
 	// 最终仍限制在 [minimum, base]，不会突破最小周期，也不会比原配置扫描得更慢。
@@ -260,6 +275,8 @@ func (c *AdaptiveScanController) Start() {
 	c.smoothedDuty = 0
 	c.hasSmoothedDuty = false
 	c.lastDutyBits.Store(math.Float64bits(0))
+	c.minimumDutyBits.Store(math.Float64bits(0))
+	c.budgetSaturated.Store(false)
 	c.sampleMu.Unlock()
 
 	c.done = make(chan struct{})
@@ -335,33 +352,138 @@ func (c *AdaptiveScanController) observeSample(now time.Time, totalNanos int64) 
 	c.sampleMu.Unlock()
 
 	c.lastDutyBits.Store(math.Float64bits(smoothedDuty))
-	c.updateMultiplier(smoothedDuty)
+	c.updateMultiplier()
 }
 
 func (c *AdaptiveScanController) setMultiplier(value float64) {
 	c.multiplierBits.Store(math.Float64bits(value))
 }
 
-func (c *AdaptiveScanController) updateMultiplier(duty float64) {
-	if duty < 0 || math.IsNaN(duty) || math.IsInf(duty, 0) {
-		return
+type adaptiveScanControlCost struct {
+	scanNanos  float64
+	localNanos float64
+	baseNanos  float64
+}
+
+type adaptiveScanControlModel struct {
+	inputs            int
+	maxMultiplier     float64
+	currentDuty       float64
+	minimumDuty       float64
+	desiredMultiplier float64
+}
+
+// controlModel 根据各 input 的扫描耗时 EWMA 和周期边界估算稳态聚合占空比。
+// 相比直接使用短采样窗口，模型不会在扫描周期大于 controlInterval 时因空窗口和突发窗口振荡。
+func (c *AdaptiveScanController) controlModel(current float64) adaptiveScanControlModel {
+	c.mu.Lock()
+	costs := make([]adaptiveScanControlCost, 0, len(c.inputs))
+	for _, state := range c.inputs {
+		if state.ewmaScanNanos <= 0 || state.localInterval <= 0 || state.baseInterval <= 0 {
+			continue
+		}
+		costs = append(costs, adaptiveScanControlCost{
+			scanNanos:  state.ewmaScanNanos,
+			localNanos: float64(state.localInterval),
+			baseNanos:  float64(state.baseInterval),
+		})
+	}
+	c.mu.Unlock()
+
+	model := adaptiveScanControlModel{
+		inputs:            len(costs),
+		maxMultiplier:     1,
+		desiredMultiplier: 1,
+	}
+	if len(costs) == 0 {
+		return model
 	}
 
+	for _, cost := range costs {
+		ratio := cost.baseNanos / cost.localNanos
+		if ratio > model.maxMultiplier {
+			model.maxMultiplier = ratio
+		}
+	}
+
+	dutyAt := func(multiplier float64) float64 {
+		var duty float64
+		for _, cost := range costs {
+			interval := cost.localNanos * multiplier
+			if interval > cost.baseNanos {
+				interval = cost.baseNanos
+			}
+			duty += cost.scanNanos / interval
+		}
+		return duty
+	}
+
+	current = clampFloat(current, 1, model.maxMultiplier)
+	model.currentDuty = dutyAt(current)
+	model.minimumDuty = dutyAt(model.maxMultiplier)
+	if dutyAt(1) <= c.targetDuty {
+		return model
+	}
+	if model.minimumDuty > c.targetDuty {
+		model.desiredMultiplier = model.maxMultiplier
+		return model
+	}
+
+	// dutyAt 随 multiplier 单调不增；二分得到满足预算的最小 multiplier，
+	// 避免固定上限阻断本可满足的配置，也避免超出所有 input 的实际调节空间。
+	low, high := 1.0, model.maxMultiplier
+	for range adaptiveScanSearchIterations {
+		middle := (low + high) / 2
+		if dutyAt(middle) > c.targetDuty {
+			low = middle
+		} else {
+			high = middle
+		}
+	}
+	model.desiredMultiplier = high
+	return model
+}
+
+func (c *AdaptiveScanController) updateMultiplier() {
 	current := c.Multiplier()
-	// 目标附近保留 15% 死区，避免扫描耗时的小幅波动导致周期频繁变化。
-	if duty >= c.targetDuty*(1-adaptiveScanDeadbandRatio) &&
-		duty <= c.targetDuty*(1+adaptiveScanDeadbandRatio) {
+	model := c.controlModel(current)
+	c.minimumDutyBits.Store(math.Float64bits(model.minimumDuty))
+	c.budgetSaturated.Store(model.inputs > 0 && model.minimumDuty > c.targetDuty)
+	if model.inputs == 0 {
+		c.setMultiplier(adaptiveScanInitialMultiple)
 		return
 	}
 
-	// 按 duty/target 的比例反推新 multiplier，再限制单次最大步长并做一次 EWMA。
-	// 这样既能在超预算时及时降频，也不会因单个异常采样突然跳到极端值。
-	target := current * duty / c.targetDuty
-	target = clampFloat(target, 1, adaptiveScanMaxMultiplier)
-	target = clampFloat(target, current/adaptiveScanMaxStepRatio, current*adaptiveScanMaxStepRatio)
+	current = clampFloat(current, 1, model.maxMultiplier)
+	// input 删除或局部周期变化可能降低动态上限，应立即收回已经无效的 multiplier。
+	if current != c.Multiplier() {
+		c.setMultiplier(current)
+	}
 
-	next := adaptiveScanEWMAAlpha*target + (1-adaptiveScanEWMAAlpha)*current
-	c.setMultiplier(clampFloat(next, 1, adaptiveScanMaxMultiplier))
+	// 目标附近保留 15% 死区，避免扫描耗时的小幅波动导致周期频繁变化。
+	if model.currentDuty >= c.targetDuty*(1-adaptiveScanDeadbandRatio) &&
+		model.currentDuty <= c.targetDuty*(1+adaptiveScanDeadbandRatio) {
+		return
+	}
+
+	var next float64
+	if model.currentDuty > c.targetDuty {
+		// 严重超预算时按 8 倍、4 倍、2 倍分级快速升档，但绝不越过模型求得的目标。
+		dutyRatio := model.currentDuty / c.targetDuty
+		growthRatio := adaptiveScanNormalGrowthRatio
+		switch {
+		case dutyRatio >= adaptiveScanEmergencyDutyRatio:
+			growthRatio = adaptiveScanEmergencyGrowthRatio
+		case dutyRatio >= adaptiveScanModerateDutyRatio:
+			growthRatio = adaptiveScanModerateGrowthRatio
+		}
+		next = math.Min(model.desiredMultiplier, current*growthRatio)
+	} else {
+		// 预算有余量时每轮最多回收 25%，保留原控制器的保守恢复特性。
+		next = math.Max(model.desiredMultiplier, current*adaptiveScanRecoveryRatio)
+	}
+
+	c.setMultiplier(clampFloat(next, 1, model.maxMultiplier))
 }
 
 func (c *AdaptiveScanController) maybeLogIntervalChange(
@@ -417,9 +539,11 @@ func (c *AdaptiveScanController) snapshot() AdaptiveScanSnapshot {
 	}
 
 	snapshot := AdaptiveScanSnapshot{
-		Multiplier: c.Multiplier(),
-		ScanDuty:   math.Float64frombits(c.lastDutyBits.Load()),
-		TargetDuty: c.targetDuty,
+		Multiplier:          c.Multiplier(),
+		ScanDuty:            math.Float64frombits(c.lastDutyBits.Load()),
+		TargetDuty:          c.targetDuty,
+		MinimumPossibleDuty: math.Float64frombits(c.minimumDutyBits.Load()),
+		BudgetSaturated:     c.budgetSaturated.Load(),
 	}
 	var candidates []candidate
 
@@ -576,12 +700,15 @@ func logAdaptiveScanIntervalChange(record AdaptiveScanIntervalLog) {
 func logAdaptiveScanSnapshot(snapshot AdaptiveScanSnapshot) {
 	logp.L.Infof(
 		"adaptive scan snapshot: inputs=%d shortened=%d multiplier=%.3f scan_duty=%.4f "+
-			"target_duty=%.4f intervals=%+v slowest_inputs=%+v",
+			"target_duty=%.4f minimum_possible_duty=%.4f budget_saturated=%t "+
+			"intervals=%+v slowest_inputs=%+v",
 		snapshot.Inputs,
 		snapshot.Shortened,
 		snapshot.Multiplier,
 		snapshot.ScanDuty,
 		snapshot.TargetDuty,
+		snapshot.MinimumPossibleDuty,
+		snapshot.BudgetSaturated,
 		snapshot.Intervals,
 		snapshot.SlowestInputs,
 	)
