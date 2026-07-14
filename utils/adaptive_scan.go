@@ -698,7 +698,7 @@ func logAdaptiveScanIntervalChange(record AdaptiveScanIntervalLog) {
 }
 
 func logAdaptiveScanSnapshot(snapshot AdaptiveScanSnapshot) {
-	logp.L.Infof(
+	logp.L.Debugf(
 		"adaptive scan snapshot: inputs=%d shortened=%d multiplier=%.3f scan_duty=%.4f "+
 			"target_duty=%.4f minimum_possible_duty=%.4f budget_saturated=%t "+
 			"intervals=%+v slowest_inputs=%+v",
