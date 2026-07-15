@@ -116,6 +116,7 @@ func TestV2FormatterMountReplace(t *testing.T) {
 			{"/test/sub/mount", "/mount"},
 		},
 		"remove_path_prefix": "/var/host",
+		"root_fs":            "/var/host",
 		"is_container_std":   true,
 	}
 	taskConfig, err := config.CreateTaskConfig(vars)
@@ -141,12 +142,12 @@ func TestV2FormatterMountReplace(t *testing.T) {
 
 	data := f.Format([]*util.Data{event})
 
-	assert.Equal(t, data["filename"], "/data/datahub/udp/backup/a/b/c.log")
+	assert.Equal(t, "/data/datahub/udp/backup/a/b/c.log", data["filename"])
 
 	event.SetState(file.State{Source: "/var/host/var/lib/kubelet/pods/ab7e4dcd-4c93-4f01-8ebd-fb7bcc293bd9/volumes/kubernetes.io~csi/pvc-38265a73-baa1-4249-879b-af4bbc30a7ba/mount/d/e/f.log"})
 
 	data = f.Format([]*util.Data{event})
 
-	assert.Equal(t, data["filename"], "/data/datahub/backup/deeper/d/e/f.log")
+	assert.Equal(t, "/data/datahub/backup/deeper/d/e/f.log", data["filename"])
 
 }

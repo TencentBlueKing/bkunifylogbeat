@@ -155,8 +155,9 @@ func (c SenderConfig) GetExtMeta() map[string]interface{} {
 // TaskConfig 采集任务配置
 type TaskConfig struct {
 	ID     string
-	Type   string `config:"type"`
-	DataID int    `config:"dataid"`
+	Type   string   `config:"type"`
+	DataID int      `config:"dataid"`
+	Paths  []string `config:"paths"`
 
 	ProcessorConfig `config:",inline"`
 	FiltersConfig   `config:",inline"`
