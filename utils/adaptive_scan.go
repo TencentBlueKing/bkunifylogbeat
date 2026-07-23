@@ -36,8 +36,8 @@ const (
 	adaptiveScanSnapshotTopK     = 5
 )
 
-// AdaptiveScanSettings 控制单 input 周期计算和全局扫描 CPU 预算。
-// ScanCPUPercent 表示扫描耗时占单核时间的百分比。
+// AdaptiveScanSettings 控制单 input 周期计算和全局扫描工作预算。
+// ScanCPUPercent 表示扫描墙钟耗时占单核时间的百分比；它是扫描开销代理，不是进程 CPU 使用率。
 type AdaptiveScanSettings struct {
 	MinScanFrequency time.Duration
 	ScanCPUPercent   float64
@@ -67,6 +67,9 @@ type AdaptiveScanIntervalLog struct {
 	EffectiveInterval time.Duration
 	Multiplier        float64
 	ScanDuration      time.Duration
+	TargetDuty        float64
+	EffectiveCores    float64
+	CPUCapacitySource string
 }
 
 // AdaptiveScanIntervalDistribution 是周期快照中固定桶数的扫描周期分布。
@@ -93,11 +96,14 @@ type AdaptiveScanSnapshotInput struct {
 
 // AdaptiveScanSnapshot 表示一条固定大小的控制器聚合快照。
 type AdaptiveScanSnapshot struct {
-	Inputs     int
-	Shortened  int
-	Multiplier float64
-	ScanDuty   float64
-	TargetDuty float64
+	Inputs               int
+	Shortened            int
+	Multiplier           float64
+	ScanDuty             float64
+	ConfiguredTargetDuty float64
+	TargetDuty           float64
+	EffectiveCores       float64
+	CPUCapacitySource    string
 	// MinimumPossibleDuty 是所有活跃 input 都退回基础周期后的最低聚合扫描占空比。
 	MinimumPossibleDuty float64
 	// BudgetSaturated 表示基础周期上限使目标预算无法满足。
@@ -108,9 +114,12 @@ type AdaptiveScanSnapshot struct {
 
 // AdaptiveScanController 计算每个 input 的扫描周期，并维护限制聚合扫描开销的全局乘数。
 type AdaptiveScanController struct {
-	minScanFrequency time.Duration
-	controlInterval  time.Duration
-	targetDuty       float64
+	minScanFrequency     time.Duration
+	controlInterval      time.Duration
+	configuredTargetDuty float64
+	cpuCapacityReader    cpuCapacityReader
+	cpuCapacity          atomic.Pointer[adaptiveScanCPUCapacityState]
+	capacityErrorLogged  atomic.Bool
 
 	// mu 只保护各 Runner 的局部 EWMA、最终周期和日志状态。
 	mu     sync.Mutex
@@ -144,8 +153,18 @@ type AdaptiveScanController struct {
 	logInputSnapshots func([]AdaptiveScanIntervalLog)
 }
 
+type adaptiveScanCPUCapacityState struct {
+	targetDuty     float64
+	effectiveCores float64
+	source         string
+}
+
 // NewAdaptiveScanController 创建自适应扫描控制器。
 func NewAdaptiveScanController(settings AdaptiveScanSettings) (*AdaptiveScanController, error) {
+	return newAdaptiveScanController(settings, newCPUCapacityReader())
+}
+
+func newAdaptiveScanController(settings AdaptiveScanSettings, capacityReader cpuCapacityReader) (*AdaptiveScanController, error) {
 	if settings.MinScanFrequency <= 0 {
 		return nil, fmt.Errorf("min scan frequency must be greater than 0")
 	}
@@ -156,18 +175,28 @@ func NewAdaptiveScanController(settings AdaptiveScanSettings) (*AdaptiveScanCont
 	if settings.ControlInterval <= 0 {
 		return nil, fmt.Errorf("control interval must be greater than 0")
 	}
+	if capacityReader == nil {
+		return nil, fmt.Errorf("CPU capacity reader must not be nil")
+	}
 
 	controller := &AdaptiveScanController{
-		minScanFrequency:  settings.MinScanFrequency,
-		controlInterval:   settings.ControlInterval,
-		targetDuty:        settings.ScanCPUPercent / 100,
-		inputs:            make(map[uint64]*adaptiveScanInputState),
-		now:               time.Now,
-		logIntervalChange: logAdaptiveScanIntervalChange,
-		snapshotInterval:  adaptiveScanSnapshotInterval,
-		logSnapshot:       logAdaptiveScanSnapshot,
-		logInputSnapshots: logAdaptiveScanInputSnapshots,
+		minScanFrequency:     settings.MinScanFrequency,
+		controlInterval:      settings.ControlInterval,
+		configuredTargetDuty: settings.ScanCPUPercent / 100,
+		cpuCapacityReader:    capacityReader,
+		inputs:               make(map[uint64]*adaptiveScanInputState),
+		now:                  time.Now,
+		logIntervalChange:    logAdaptiveScanIntervalChange,
+		snapshotInterval:     adaptiveScanSnapshotInterval,
+		logSnapshot:          logAdaptiveScanSnapshot,
+		logInputSnapshots:    logAdaptiveScanInputSnapshots,
 	}
+	controller.cpuCapacity.Store(&adaptiveScanCPUCapacityState{
+		targetDuty: controller.configuredTargetDuty,
+		source:     cpuCapacitySourceFallback,
+	})
+	// 容量探测失败不能阻断采集器启动；冷启动保留 PR #140 的单核预算语义。
+	_ = controller.refreshCPUCapacity()
 	controller.setMultiplier(adaptiveScanInitialMultiple)
 	return controller, nil
 }
@@ -199,7 +228,7 @@ func (c *AdaptiveScanController) NextInterval(inputID uint64, base, scanDuration
 
 	// 第一层局部控制：local = EWMA(scanDuration) / targetDuty。
 	// 例如目标占空比为 5%，一次扫描耗时 50ms，则局部周期应约为 1s。
-	localNanos := ewmaScanNanos / c.targetDuty
+	localNanos := ewmaScanNanos / c.targetDuty()
 	local := base
 	if localNanos < float64(base) {
 		local = clampDuration(time.Duration(localNanos), minimum, base)
@@ -259,6 +288,40 @@ func (c *AdaptiveScanController) removeInput(inputID uint64) {
 // Multiplier 返回当前全局扫描周期乘数。
 func (c *AdaptiveScanController) Multiplier() float64 {
 	return math.Float64frombits(c.multiplierBits.Load())
+}
+
+func (c *AdaptiveScanController) targetDuty() float64 {
+	return c.cpuCapacity.Load().targetDuty
+}
+
+func (c *AdaptiveScanController) refreshCPUCapacity() error {
+	capacity, err := c.cpuCapacityReader.Capacity()
+	if err != nil {
+		// 保留最近一次成功结果；冷启动时保留构造函数写入的 fallback。
+		return err
+	}
+
+	state := &adaptiveScanCPUCapacityState{
+		targetDuty: c.configuredTargetDuty,
+		source:     capacity.Source,
+	}
+	if state.source == "" {
+		state.source = cpuCapacitySourceFallback
+	}
+	if capacity.Limited {
+		if capacity.EffectiveCores <= 0 ||
+			math.IsNaN(capacity.EffectiveCores) || math.IsInf(capacity.EffectiveCores, 0) {
+			return fmt.Errorf("invalid effective CPU cores: %v", capacity.EffectiveCores)
+		}
+		state.effectiveCores = capacity.EffectiveCores
+		state.targetDuty *= math.Min(1, capacity.EffectiveCores)
+	}
+	c.cpuCapacity.Store(state)
+	return nil
+}
+
+func (c *AdaptiveScanController) capacityState() adaptiveScanCPUCapacityState {
+	return *c.cpuCapacity.Load()
 }
 
 // Start 启动聚合扫描占空比的周期采样。
@@ -375,7 +438,7 @@ type adaptiveScanControlModel struct {
 
 // controlModel 根据各 input 的扫描耗时 EWMA 和周期边界估算稳态聚合占空比。
 // 相比直接使用短采样窗口，模型不会在扫描周期大于 controlInterval 时因空窗口和突发窗口振荡。
-func (c *AdaptiveScanController) controlModel(current float64) adaptiveScanControlModel {
+func (c *AdaptiveScanController) controlModel(current, targetDuty float64) adaptiveScanControlModel {
 	c.mu.Lock()
 	costs := make([]adaptiveScanControlCost, 0, len(c.inputs))
 	for _, state := range c.inputs {
@@ -421,10 +484,10 @@ func (c *AdaptiveScanController) controlModel(current float64) adaptiveScanContr
 	current = clampFloat(current, 1, model.maxMultiplier)
 	model.currentDuty = dutyAt(current)
 	model.minimumDuty = dutyAt(model.maxMultiplier)
-	if dutyAt(1) <= c.targetDuty {
+	if dutyAt(1) <= targetDuty {
 		return model
 	}
-	if model.minimumDuty > c.targetDuty {
+	if model.minimumDuty > targetDuty {
 		model.desiredMultiplier = model.maxMultiplier
 		return model
 	}
@@ -434,7 +497,7 @@ func (c *AdaptiveScanController) controlModel(current float64) adaptiveScanContr
 	low, high := 1.0, model.maxMultiplier
 	for range adaptiveScanSearchIterations {
 		middle := (low + high) / 2
-		if dutyAt(middle) > c.targetDuty {
+		if dutyAt(middle) > targetDuty {
 			low = middle
 		} else {
 			high = middle
@@ -445,10 +508,19 @@ func (c *AdaptiveScanController) controlModel(current float64) adaptiveScanContr
 }
 
 func (c *AdaptiveScanController) updateMultiplier() {
+	if err := c.refreshCPUCapacity(); err != nil {
+		if c.capacityErrorLogged.CompareAndSwap(false, true) {
+			logp.L.Warnf("adaptive scan failed to refresh CPU capacity, keeping last value: %v", err)
+		}
+	} else {
+		c.capacityErrorLogged.Store(false)
+	}
+
+	targetDuty := c.targetDuty()
 	current := c.Multiplier()
-	model := c.controlModel(current)
+	model := c.controlModel(current, targetDuty)
 	c.minimumDutyBits.Store(math.Float64bits(model.minimumDuty))
-	c.budgetSaturated.Store(model.inputs > 0 && model.minimumDuty > c.targetDuty)
+	c.budgetSaturated.Store(model.inputs > 0 && model.minimumDuty > targetDuty)
 	if model.inputs == 0 {
 		c.setMultiplier(adaptiveScanInitialMultiple)
 		return
@@ -461,15 +533,15 @@ func (c *AdaptiveScanController) updateMultiplier() {
 	}
 
 	// 目标附近保留 15% 死区，避免扫描耗时的小幅波动导致周期频繁变化。
-	if model.currentDuty >= c.targetDuty*(1-adaptiveScanDeadbandRatio) &&
-		model.currentDuty <= c.targetDuty*(1+adaptiveScanDeadbandRatio) {
+	if model.currentDuty >= targetDuty*(1-adaptiveScanDeadbandRatio) &&
+		model.currentDuty <= targetDuty*(1+adaptiveScanDeadbandRatio) {
 		return
 	}
 
 	var next float64
-	if model.currentDuty > c.targetDuty {
+	if model.currentDuty > targetDuty {
 		// 严重超预算时按 8 倍、4 倍、2 倍分级快速升档，但绝不越过模型求得的目标。
-		dutyRatio := model.currentDuty / c.targetDuty
+		dutyRatio := model.currentDuty / targetDuty
 		growthRatio := adaptiveScanNormalGrowthRatio
 		switch {
 		case dutyRatio >= adaptiveScanEmergencyDutyRatio:
@@ -517,6 +589,7 @@ func (c *AdaptiveScanController) maybeLogIntervalChange(
 		return
 	}
 
+	capacity := c.capacityState()
 	c.logIntervalChange(AdaptiveScanIntervalLog{
 		RunnerID:          runnerID,
 		InputID:           metadata.InputID,
@@ -528,6 +601,9 @@ func (c *AdaptiveScanController) maybeLogIntervalChange(
 		EffectiveInterval: effective,
 		Multiplier:        c.Multiplier(),
 		ScanDuration:      scanDuration,
+		TargetDuty:        capacity.targetDuty,
+		EffectiveCores:    capacity.effectiveCores,
+		CPUCapacitySource: capacity.source,
 	})
 }
 
@@ -538,12 +614,16 @@ func (c *AdaptiveScanController) snapshot() AdaptiveScanSnapshot {
 		state    adaptiveScanInputState
 	}
 
+	capacity := c.cpuCapacity.Load()
 	snapshot := AdaptiveScanSnapshot{
-		Multiplier:          c.Multiplier(),
-		ScanDuty:            math.Float64frombits(c.lastDutyBits.Load()),
-		TargetDuty:          c.targetDuty,
-		MinimumPossibleDuty: math.Float64frombits(c.minimumDutyBits.Load()),
-		BudgetSaturated:     c.budgetSaturated.Load(),
+		Multiplier:           c.Multiplier(),
+		ScanDuty:             math.Float64frombits(c.lastDutyBits.Load()),
+		ConfiguredTargetDuty: c.configuredTargetDuty,
+		TargetDuty:           capacity.targetDuty,
+		EffectiveCores:       capacity.effectiveCores,
+		CPUCapacitySource:    capacity.source,
+		MinimumPossibleDuty:  math.Float64frombits(c.minimumDutyBits.Load()),
+		BudgetSaturated:      c.budgetSaturated.Load(),
 	}
 	var candidates []candidate
 
@@ -628,6 +708,7 @@ func (c *AdaptiveScanController) inputSnapshots() []AdaptiveScanIntervalLog {
 	sort.Slice(states, func(i, j int) bool {
 		return states[i].runnerID < states[j].runnerID
 	})
+	capacity := c.capacityState()
 	records := make([]AdaptiveScanIntervalLog, 0, len(states))
 	for _, item := range states {
 		record := AdaptiveScanIntervalLog{
@@ -637,6 +718,9 @@ func (c *AdaptiveScanController) inputSnapshots() []AdaptiveScanIntervalLog {
 			EffectiveInterval: item.state.effectiveInterval,
 			Multiplier:        c.Multiplier(),
 			ScanDuration:      item.state.lastScanDuration,
+			TargetDuty:        capacity.targetDuty,
+			EffectiveCores:    capacity.effectiveCores,
+			CPUCapacitySource: capacity.source,
 		}
 		if metadata, ok := adaptiveScanInputMetadata(item.runnerID); ok {
 			record.InputID = metadata.InputID
@@ -683,7 +767,8 @@ func adaptiveScanIntervalBucket(interval, base time.Duration) int {
 func logAdaptiveScanIntervalChange(record AdaptiveScanIntervalLog) {
 	logp.L.Infof(
 		"adaptive scan interval changed: runner_id=%d input_id=%s task_ids=%v data_ids=%v paths=%v "+
-			"base=%s requested_interval=%s effective_interval=%s multiplier=%.3f scan_duration=%s",
+			"base=%s requested_interval=%s effective_interval=%s multiplier=%.3f scan_duration=%s "+
+			"target_duty=%.4f effective_cores=%.3f cpu_capacity_source=%s",
 		record.RunnerID,
 		record.InputID,
 		record.TaskIDs,
@@ -694,19 +779,26 @@ func logAdaptiveScanIntervalChange(record AdaptiveScanIntervalLog) {
 		record.EffectiveInterval,
 		record.Multiplier,
 		record.ScanDuration,
+		record.TargetDuty,
+		record.EffectiveCores,
+		record.CPUCapacitySource,
 	)
 }
 
 func logAdaptiveScanSnapshot(snapshot AdaptiveScanSnapshot) {
 	logp.L.Debugf(
 		"adaptive scan snapshot: inputs=%d shortened=%d multiplier=%.3f scan_duty=%.4f "+
-			"target_duty=%.4f minimum_possible_duty=%.4f budget_saturated=%t "+
+			"configured_target_duty=%.4f target_duty=%.4f effective_cores=%.3f cpu_capacity_source=%s "+
+			"minimum_possible_duty=%.4f budget_saturated=%t "+
 			"intervals=%+v slowest_inputs=%+v",
 		snapshot.Inputs,
 		snapshot.Shortened,
 		snapshot.Multiplier,
 		snapshot.ScanDuty,
+		snapshot.ConfiguredTargetDuty,
 		snapshot.TargetDuty,
+		snapshot.EffectiveCores,
+		snapshot.CPUCapacitySource,
 		snapshot.MinimumPossibleDuty,
 		snapshot.BudgetSaturated,
 		snapshot.Intervals,
@@ -718,7 +810,8 @@ func logAdaptiveScanInputSnapshots(records []AdaptiveScanIntervalLog) {
 	for _, record := range records {
 		logp.L.Debugf(
 			"adaptive scan input snapshot: runner_id=%d input_id=%s task_ids=%v data_ids=%v paths=%v "+
-				"base=%s requested_interval=%s effective_interval=%s multiplier=%.3f scan_duration=%s",
+				"base=%s requested_interval=%s effective_interval=%s multiplier=%.3f scan_duration=%s "+
+				"target_duty=%.4f effective_cores=%.3f cpu_capacity_source=%s",
 			record.RunnerID,
 			record.InputID,
 			record.TaskIDs,
@@ -729,6 +822,9 @@ func logAdaptiveScanInputSnapshots(records []AdaptiveScanIntervalLog) {
 			record.EffectiveInterval,
 			record.Multiplier,
 			record.ScanDuration,
+			record.TargetDuty,
+			record.EffectiveCores,
+			record.CPUCapacitySource,
 		)
 	}
 }
