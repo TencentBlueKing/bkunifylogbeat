@@ -71,7 +71,8 @@ type AdaptiveScanConfig struct {
 	Enabled bool `config:"enabled"`
 	// MinScanFrequency 是动态缩短后的下限；若原配置周期更短，仍以原配置为准。
 	MinScanFrequency time.Duration `config:"min_scan_frequency"`
-	// ScanCPUPercent 是所有 input 聚合扫描耗时占单核时间的目标比例，不是单 input 配额。
+	// ScanCPUPercent 是所有 input 聚合扫描墙钟耗时占单核时间的目标比例，不是进程 CPU 使用率；
+	// 当容器 CPU quota 小于 1 核时，会按 quota 等比例缩小预算。
 	ScanCPUPercent float64 `config:"scan_cpu_percent"`
 	// ControlInterval 是 governor 的采样与调节周期，与文件扫描周期相互独立。
 	ControlInterval time.Duration `config:"control_interval"`
