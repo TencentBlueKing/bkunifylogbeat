@@ -13,12 +13,31 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+type staticCPUCapacityReader struct {
+	capacity cpuCapacity
+	err      error
+}
+
+func (r staticCPUCapacityReader) Capacity() (cpuCapacity, error) {
+	return r.capacity, r.err
+}
+
 func newTestAdaptiveScanController(t *testing.T) *AdaptiveScanController {
 	t.Helper()
-	controller, err := NewAdaptiveScanController(AdaptiveScanSettings{
+	return newTestAdaptiveScanControllerWithSettings(t, AdaptiveScanSettings{
 		MinScanFrequency: 500 * time.Millisecond,
 		ScanCPUPercent:   5,
 		ControlInterval:  3 * time.Second,
+	})
+}
+
+func newTestAdaptiveScanControllerWithSettings(
+	t *testing.T,
+	settings AdaptiveScanSettings,
+) *AdaptiveScanController {
+	t.Helper()
+	controller, err := newAdaptiveScanController(settings, staticCPUCapacityReader{
+		capacity: cpuCapacity{Source: cpuCapacitySourceUnlimited},
 	})
 	assert.NoError(t, err)
 	controller.logIntervalChange = func(AdaptiveScanIntervalLog) {}
@@ -86,12 +105,11 @@ func TestAdaptiveScanGovernorDeadband(t *testing.T) {
 }
 
 func TestAdaptiveScanGovernorConvergesWithOneHundredInputs(t *testing.T) {
-	controller, err := NewAdaptiveScanController(AdaptiveScanSettings{
+	controller := newTestAdaptiveScanControllerWithSettings(t, AdaptiveScanSettings{
 		MinScanFrequency: time.Second,
 		ScanCPUPercent:   5,
 		ControlInterval:  3 * time.Second,
 	})
-	assert.NoError(t, err)
 
 	const inputs = 100
 	base := 300 * time.Second
@@ -107,16 +125,46 @@ func TestAdaptiveScanGovernorConvergesWithOneHundredInputs(t *testing.T) {
 	assert.InDelta(t, 20, controller.Multiplier(), 0.1)
 	interval := controller.NextInterval(1, base, scanDuration)
 	assert.InDelta(t, 20*time.Second, interval, float64(time.Millisecond))
-	assert.InDelta(t, controller.targetDuty, float64(inputs)*float64(scanDuration)/float64(interval), 0.0001)
+	assert.InDelta(t, controller.targetDuty(), float64(inputs)*float64(scanDuration)/float64(interval), 0.0001)
+}
+
+func TestAdaptiveScanGovernorScalesTargetForSubCoreQuota(t *testing.T) {
+	controller, err := newAdaptiveScanController(AdaptiveScanSettings{
+		MinScanFrequency: time.Second,
+		ScanCPUPercent:   5,
+		ControlInterval:  3 * time.Second,
+	}, staticCPUCapacityReader{
+		capacity: cpuCapacity{
+			EffectiveCores: 0.5,
+			Source:         cpuCapacitySourceCgroupV2Quota,
+			Limited:        true,
+		},
+	})
+	assert.NoError(t, err)
+
+	const inputs = 100
+	base := 300 * time.Second
+	scanDuration := 10 * time.Millisecond
+	for runnerID := uint64(1); runnerID <= inputs; runnerID++ {
+		nextAndObserve(controller, runnerID, base, scanDuration)
+	}
+	for range 3 {
+		controller.updateMultiplier()
+	}
+
+	assert.InDelta(t, 0.025, controller.targetDuty(), 0.0001)
+	assert.InDelta(t, 40, controller.Multiplier(), 0.1)
+	interval := controller.NextInterval(1, base, scanDuration)
+	assert.InDelta(t, 40*time.Second, interval, float64(time.Millisecond))
+	assert.InDelta(t, controller.targetDuty(), float64(inputs)*float64(scanDuration)/float64(interval), 0.0001)
 }
 
 func TestAdaptiveScanGovernorConvergesAboveLegacyCap(t *testing.T) {
-	controller, err := NewAdaptiveScanController(AdaptiveScanSettings{
+	controller := newTestAdaptiveScanControllerWithSettings(t, AdaptiveScanSettings{
 		MinScanFrequency: time.Second,
 		ScanCPUPercent:   5,
 		ControlInterval:  3 * time.Second,
 	})
-	assert.NoError(t, err)
 
 	const inputs = 1000
 	base := 300 * time.Second
@@ -133,16 +181,15 @@ func TestAdaptiveScanGovernorConvergesAboveLegacyCap(t *testing.T) {
 	assert.Greater(t, controller.Multiplier(), float64(64))
 	interval := controller.NextInterval(1, base, scanDuration)
 	assert.InDelta(t, 200*time.Second, interval, float64(time.Millisecond))
-	assert.InDelta(t, controller.targetDuty, float64(inputs)*float64(scanDuration)/float64(interval), 0.0001)
+	assert.InDelta(t, controller.targetDuty(), float64(inputs)*float64(scanDuration)/float64(interval), 0.0001)
 }
 
 func TestAdaptiveScanGovernorStopsAtDynamicLimitWhenBudgetIsImpossible(t *testing.T) {
-	controller, err := NewAdaptiveScanController(AdaptiveScanSettings{
+	controller := newTestAdaptiveScanControllerWithSettings(t, AdaptiveScanSettings{
 		MinScanFrequency: time.Second,
 		ScanCPUPercent:   5,
 		ControlInterval:  3 * time.Second,
 	})
-	assert.NoError(t, err)
 
 	const inputs = 1000
 	base := 100 * time.Second
@@ -180,12 +227,11 @@ func TestAdaptiveScanGovernorResetsWithoutActiveInputs(t *testing.T) {
 }
 
 func TestAdaptiveScanGovernorRecoversTowardOne(t *testing.T) {
-	controller, err := NewAdaptiveScanController(AdaptiveScanSettings{
+	controller := newTestAdaptiveScanControllerWithSettings(t, AdaptiveScanSettings{
 		MinScanFrequency: time.Second,
 		ScanCPUPercent:   5,
 		ControlInterval:  3 * time.Second,
 	})
-	assert.NoError(t, err)
 	for runnerID := uint64(1); runnerID <= 100; runnerID++ {
 		nextAndObserve(controller, runnerID, 300*time.Second, 10*time.Millisecond)
 	}
@@ -227,12 +273,11 @@ func TestAdaptiveScanGovernorSmoothsAggregateDuty(t *testing.T) {
 }
 
 func TestAdaptiveScanGovernorStartStopIsIdempotent(t *testing.T) {
-	controller, err := NewAdaptiveScanController(AdaptiveScanSettings{
+	controller := newTestAdaptiveScanControllerWithSettings(t, AdaptiveScanSettings{
 		MinScanFrequency: 500 * time.Millisecond,
 		ScanCPUPercent:   5,
 		ControlInterval:  10 * time.Millisecond,
 	})
-	assert.NoError(t, err)
 
 	for runnerID := uint64(1); runnerID <= 100; runnerID++ {
 		controller.NextInterval(runnerID, 300*time.Second, 10*time.Millisecond)
@@ -325,6 +370,8 @@ func TestAdaptiveScanControllerLogsMeaningfulIntervalChanges(t *testing.T) {
 	assert.Equal(t, []int{1001}, records[0].DataIDs)
 	assert.Equal(t, 500*time.Millisecond, records[0].RequestedInterval)
 	assert.Equal(t, 500*time.Millisecond, records[0].EffectiveInterval)
+	assert.InDelta(t, 0.05, records[0].TargetDuty, 0.0001)
+	assert.Equal(t, cpuCapacitySourceUnlimited, records[0].CPUCapacitySource)
 
 	now = now.Add(10 * time.Second)
 	nextAndObserve(controller, runnerID, 10*time.Second, 100*time.Millisecond)
@@ -429,6 +476,10 @@ func TestAdaptiveScanControllerBuildsBoundedAggregateSnapshot(t *testing.T) {
 	assert.Equal(t, 1, snapshot.Intervals.UpTo2Seconds)
 	assert.Equal(t, 1, snapshot.Intervals.AtBase)
 	assert.InDelta(t, 0.03, snapshot.ScanDuty, 0.0001)
+	assert.InDelta(t, 0.05, snapshot.ConfiguredTargetDuty, 0.0001)
+	assert.InDelta(t, 0.05, snapshot.TargetDuty, 0.0001)
+	assert.Zero(t, snapshot.EffectiveCores)
+	assert.Equal(t, cpuCapacitySourceUnlimited, snapshot.CPUCapacitySource)
 	assert.Len(t, snapshot.SlowestInputs, 3)
 	assert.Equal(t, runnerIDs[2], snapshot.SlowestInputs[0].RunnerID)
 
