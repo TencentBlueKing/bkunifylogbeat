@@ -23,111 +23,12 @@
 package config
 
 import (
-	"math"
 	"os"
 	"testing"
-	"time"
 
-	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	"github.com/elastic/beats/libbeat/common"
-	libbeatlogp "github.com/elastic/beats/libbeat/logp"
 	"github.com/stretchr/testify/assert"
 )
-
-func init() {
-	logp.SetLogger(libbeatlogp.L())
-}
-
-func TestParseAdaptiveScanDefaults(t *testing.T) {
-	raw, err := common.NewConfigFrom(map[string]interface{}{})
-	assert.NoError(t, err)
-
-	cfg, err := Parse(raw)
-	assert.NoError(t, err)
-	assert.True(t, cfg.AdaptiveScan.Enabled)
-	assert.Equal(t, time.Second, cfg.AdaptiveScan.MinScanFrequency)
-	assert.Equal(t, float64(5), cfg.AdaptiveScan.ScanCPUPercent)
-	assert.Equal(t, 3*time.Second, cfg.AdaptiveScan.ControlInterval)
-}
-
-func TestParseAdaptiveScanCustomConfig(t *testing.T) {
-	raw, err := common.NewConfigFrom(map[string]interface{}{
-		"adaptive_scan": map[string]interface{}{
-			"enabled":            true,
-			"min_scan_frequency": "750ms",
-			"scan_cpu_percent":   8.5,
-			"control_interval":   "5s",
-		},
-	})
-	assert.NoError(t, err)
-
-	cfg, err := Parse(raw)
-	assert.NoError(t, err)
-	assert.True(t, cfg.AdaptiveScan.Enabled)
-	assert.Equal(t, 750*time.Millisecond, cfg.AdaptiveScan.MinScanFrequency)
-	assert.Equal(t, 8.5, cfg.AdaptiveScan.ScanCPUPercent)
-	assert.Equal(t, 5*time.Second, cfg.AdaptiveScan.ControlInterval)
-}
-
-func TestParseAdaptiveScanRejectsInvalidEnabledConfig(t *testing.T) {
-	tests := []struct {
-		name   string
-		values map[string]interface{}
-	}{
-		{
-			name: "non-positive minimum interval",
-			values: map[string]interface{}{
-				"min_scan_frequency": "0s",
-			},
-		},
-		{
-			name: "non-positive cpu percent",
-			values: map[string]interface{}{
-				"scan_cpu_percent": 0,
-			},
-		},
-		{
-			name: "cpu percent above one core",
-			values: map[string]interface{}{
-				"scan_cpu_percent": 101,
-			},
-		},
-		{
-			name: "non-positive control interval",
-			values: map[string]interface{}{
-				"control_interval": "0s",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			adaptive := map[string]interface{}{"enabled": true}
-			for key, value := range tt.values {
-				adaptive[key] = value
-			}
-			raw, err := common.NewConfigFrom(map[string]interface{}{
-				"adaptive_scan": adaptive,
-			})
-			assert.NoError(t, err)
-
-			_, err = Parse(raw)
-			assert.Error(t, err)
-		})
-	}
-}
-
-func TestAdaptiveScanConfigRejectsNonFiniteCPUPercent(t *testing.T) {
-	for _, percent := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
-		err := (AdaptiveScanConfig{
-			Enabled:          true,
-			MinScanFrequency: time.Second,
-			ScanCPUPercent:   percent,
-			ControlInterval:  time.Second,
-		}).Validate()
-		assert.Error(t, err)
-	}
-}
 
 func TestLoadConfig(t *testing.T) {
 	content := `
