@@ -29,6 +29,7 @@ import (
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	bkmonitoring "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/monitoring"
+	filebeatinput "github.com/elastic/beats/filebeat/input"
 	"github.com/elastic/beats/filebeat/input/file"
 	"github.com/elastic/beats/libbeat/monitoring"
 
@@ -54,14 +55,21 @@ type Manager struct {
 	config   cfg.Config
 	wg       sync.WaitGroup
 	beatDone chan struct{}
+
+	// 自适应扫描控制器由 Manager 独占管理；配置锁保证并发 Reload 时只会有一条替换链路。
+	adaptiveScan             *utils.AdaptiveScanController
+	adaptiveScanConfig       cfg.AdaptiveScanConfig
+	adaptiveScanMu           sync.Mutex
+	setAdaptiveScanHooksFunc func(filebeatinput.AdaptiveScanHooks)
 }
 
 // NewManager create new manager
 func NewManager(config cfg.Config, beatDone chan struct{}) (*Manager, error) {
 	m := &Manager{
-		config:   config,
-		beatDone: beatDone,
-		tasks:    make(map[string]*task.Task),
+		config:                   config,
+		beatDone:                 beatDone,
+		tasks:                    make(map[string]*task.Task),
+		setAdaptiveScanHooksFunc: filebeatinput.SetAdaptiveScanHooks,
 	}
 
 	return m, nil
@@ -73,6 +81,9 @@ func (m *Manager) Start() error {
 	logp.L.Info("start manager")
 
 	utils.SetResourceLimit(m.config.MaxCpuLimit, m.config.CpuCheckTimes)
+	if err = m.configureAdaptiveScan(m.config.AdaptiveScan); err != nil {
+		return err
+	}
 
 	// Task
 	lastStates := registrar.ResetStates(Registrar.GetStates())
@@ -90,6 +101,8 @@ func (m *Manager) Start() error {
 
 // Stop Close manager when program quit
 func (m *Manager) Stop() error {
+	// 先卸载 hooks，再停止 Task，避免 Runner 退出期间继续调用即将销毁的控制器。
+	_ = m.configureAdaptiveScan(cfg.AdaptiveScanConfig{Enabled: false})
 	for _, t := range m.tasks {
 		t.Stop()
 		m.wg.Done()
@@ -104,6 +117,9 @@ func (m *Manager) Reload(config cfg.Config) {
 	logp.L.Infof("[Reload]update config, current tasks=>%d", len(m.tasks))
 
 	utils.SetResourceLimit(config.MaxCpuLimit, config.CpuCheckTimes)
+	if err := m.configureAdaptiveScan(config.AdaptiveScan); err != nil {
+		logp.L.Errorf("configure adaptive scan failed: %v", err)
+	}
 
 	lastStates := registrar.ResetStates(Registrar.GetStates())
 	newTasks := cfg.GetTasks(config)
@@ -179,6 +195,58 @@ func (m *Manager) Reload(config cfg.Config) {
 
 	//step 5: 重设beats配置
 	m.config = config
+}
+
+// configureAdaptiveScan 以完整 hooks bundle 为单位替换自适应扫描控制器。
+// 新控制器会先完成校验和启动；创建失败时直接返回，旧控制器继续工作。
+// 替换时依次卸载 hooks、断开清理通知、停止旧控制器，最后安装新控制器，
+// 确保 Interval 与 Applied 始终属于同一代配置。
+// 已经进入等待的 Runner 不会被 Reload 唤醒；当前等待到期并完成扫描后，
+// Runner 才读取新 hooks 计算后续周期，这是自适应配置约定的下一轮生效语义。
+func (m *Manager) configureAdaptiveScan(config cfg.AdaptiveScanConfig) error {
+	m.adaptiveScanMu.Lock()
+	defer m.adaptiveScanMu.Unlock()
+
+	if m.setAdaptiveScanHooksFunc == nil {
+		m.setAdaptiveScanHooksFunc = filebeatinput.SetAdaptiveScanHooks
+	}
+	if config.Enabled && m.adaptiveScan != nil && m.adaptiveScanConfig == config {
+		return nil
+	}
+
+	var controller *utils.AdaptiveScanController
+	if config.Enabled {
+		// 先构造新实例，不提前破坏当前可用配置，避免一次无效 Reload 关闭既有能力。
+		var err error
+		controller, err = utils.NewAdaptiveScanController(utils.AdaptiveScanSettings{
+			MinScanFrequency: config.MinScanFrequency,
+			ScanCPUPercent:   config.ScanCPUPercent,
+			ControlInterval:  config.ControlInterval,
+		})
+		if err != nil {
+			return fmt.Errorf("create adaptive scan controller: %w", err)
+		}
+		controller.Start()
+	}
+
+	// 计算与最终结果通知必须整组卸载，避免 Reload 窗口内出现新旧回调错配。
+	m.setAdaptiveScanHooksFunc(filebeatinput.AdaptiveScanHooks{})
+	utils.SetActiveAdaptiveScanController(nil)
+	if m.adaptiveScan != nil {
+		m.adaptiveScan.Stop()
+	}
+	m.adaptiveScan = controller
+	m.adaptiveScanConfig = cfg.AdaptiveScanConfig{}
+	if controller != nil {
+		m.adaptiveScanConfig = config
+		utils.SetActiveAdaptiveScanController(controller)
+		// Beats 最终裁决周期后通过 Applied 回传，日志记录的才是 Runner 实际等待周期。
+		m.setAdaptiveScanHooksFunc(filebeatinput.AdaptiveScanHooks{
+			Interval: controller.NextInterval,
+			Applied:  controller.ObserveApplied,
+		})
+	}
+	return nil
 }
 
 // startTask 启动任务，调用filebeat.runner开始进行日志采集

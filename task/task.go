@@ -119,6 +119,8 @@ func (task *Task) Run() {
 // Stop 负责停止采集任务实例，在Filebeat采集插件停止后退出
 func (task *Task) Stop() error {
 	logp.L.Infof("task(%s) is Stop", task.ID)
+	// Task 退出只移除自己的诊断元数据；底层共享 input 可能仍在服务其他 Task。
+	task.input.UnregisterAdaptiveScanTask(task.Config)
 	task.ParentNode.RemoveOutput(task.Node)
 	task.ParentNode.RemoveTaskNode(task.Node, task.TaskNode)
 
