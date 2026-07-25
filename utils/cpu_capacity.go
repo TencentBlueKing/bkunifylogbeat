@@ -60,6 +60,7 @@ type cgroupLayout struct {
 type cgroupMount struct {
 	root        string
 	mountPoint  string
+	device      string
 	fsType      string
 	controllers []string
 }
@@ -67,6 +68,13 @@ type cgroupMount struct {
 type cpuCapacityCandidate struct {
 	cores  float64
 	source string
+}
+
+type cpuCapacityReadState struct {
+	candidates      []cpuCapacityCandidate
+	readErrors      map[string][]error
+	successfulReads map[string]struct{}
+	seen            bool
 }
 
 func newCgroupCPUCapacityReader() *cgroupCPUCapacityReader {
@@ -89,107 +97,150 @@ func (r *cgroupCPUCapacityReader) Capacity() (cpuCapacity, error) {
 		return cpuCapacity{}, r.layoutErr
 	}
 
-	var candidates []cpuCapacityCandidate
-	var readErrors []error
-	seen := false
+	var state cpuCapacityReadState
 
 	if cgroupPath, pathFound := r.layout.controllerPaths[""]; pathFound {
 		for _, mount := range r.layout.v2Mounts {
-			dirs, resolved := hierarchyDirs(mount, cgroupPath)
+			dirs, resolved, err := hierarchyDirs(mount, cgroupPath)
+			if err != nil {
+				state.record(mount, "resolve", 0, false, false, err)
+				continue
+			}
 			if !resolved {
 				continue
 			}
 			cores, limited, readable, err := readV2Quota(dirs)
-			if err != nil {
-				readErrors = append(readErrors, err)
-			}
-			if readable {
-				seen = true
-			}
-			if limited {
-				candidates = append(candidates, cpuCapacityCandidate{
-					cores:  cores,
-					source: cpuCapacitySourceCgroupV2Quota,
-				})
-			}
+			state.record(mount, "v2_quota", cores, limited, readable, err)
 
 			cores, limited, readable, err = readCPUSet(dirs, []string{"cpuset.cpus.effective", "cpuset.cpus"})
-			if err != nil {
-				readErrors = append(readErrors, err)
-			}
-			if readable {
-				seen = true
-			}
-			if limited {
-				candidates = append(candidates, cpuCapacityCandidate{
-					cores:  cores,
-					source: cpuCapacitySourceCgroupV2Set,
-				})
-			}
+			state.record(mount, "v2_cpuset", cores, limited, readable, err)
 		}
 	}
 
 	if cgroupPath, pathFound := r.layout.controllerPaths["cpu"]; pathFound {
 		for _, mount := range r.layout.controllerMounts["cpu"] {
-			dirs, resolved := hierarchyDirs(mount, cgroupPath)
+			dirs, resolved, err := hierarchyDirs(mount, cgroupPath)
+			if err != nil {
+				state.record(mount, "resolve", 0, false, false, err)
+				continue
+			}
 			if !resolved {
 				continue
 			}
 			cores, limited, readable, err := readV1Quota(dirs)
-			if err != nil {
-				readErrors = append(readErrors, err)
-			}
-			if readable {
-				seen = true
-			}
-			if limited {
-				candidates = append(candidates, cpuCapacityCandidate{
-					cores:  cores,
-					source: cpuCapacitySourceCgroupV1Quota,
-				})
-			}
+			state.record(mount, "v1_quota", cores, limited, readable, err)
 		}
 	}
 	if cgroupPath, pathFound := r.layout.controllerPaths["cpuset"]; pathFound {
 		for _, mount := range r.layout.controllerMounts["cpuset"] {
-			dirs, resolved := hierarchyDirs(mount, cgroupPath)
+			dirs, resolved, err := hierarchyDirs(mount, cgroupPath)
+			if err != nil {
+				state.record(mount, "resolve", 0, false, false, err)
+				continue
+			}
 			if !resolved {
 				continue
 			}
 			cores, limited, readable, err := readCPUSet(dirs, []string{"cpuset.cpus.effective", "cpuset.cpus"})
-			if err != nil {
-				readErrors = append(readErrors, err)
-			}
-			if readable {
-				seen = true
-			}
-			if limited {
-				candidates = append(candidates, cpuCapacityCandidate{
-					cores:  cores,
-					source: cpuCapacitySourceCgroupV1Set,
-				})
-			}
+			state.record(mount, "v1_cpuset", cores, limited, readable, err)
 		}
 	}
 
-	if len(readErrors) > 0 {
-		return cpuCapacity{}, errors.Join(readErrors...)
+	if err := state.err(); err != nil {
+		return cpuCapacity{}, err
 	}
-	if len(candidates) == 0 {
-		if seen {
+	if len(state.candidates) == 0 {
+		if state.seen {
 			return cpuCapacity{Source: cpuCapacitySourceUnlimited}, nil
 		}
 		return cpuCapacity{}, errors.New("failed to read cgroup CPU capacity")
 	}
 
-	sort.SliceStable(candidates, func(i, j int) bool {
-		return candidates[i].cores < candidates[j].cores
+	sort.SliceStable(state.candidates, func(i, j int) bool {
+		return state.candidates[i].cores < state.candidates[j].cores
 	})
 	return cpuCapacity{
-		EffectiveCores: candidates[0].cores,
-		Source:         candidates[0].source,
+		EffectiveCores: state.candidates[0].cores,
+		Source:         state.candidates[0].source,
 		Limited:        true,
 	}, nil
+}
+
+func (s *cpuCapacityReadState) record(
+	mount cgroupMount,
+	resource string,
+	cores float64,
+	limited, readable bool,
+	err error,
+) {
+	key := mount.readKey(resource)
+	if err != nil {
+		if s.readErrors == nil {
+			s.readErrors = make(map[string][]error)
+		}
+		s.readErrors[key] = append(s.readErrors[key], err)
+		return
+	}
+	if readable {
+		if s.successfulReads == nil {
+			s.successfulReads = make(map[string]struct{})
+		}
+		s.successfulReads[key] = struct{}{}
+		s.seen = true
+	}
+	if limited {
+		s.candidates = append(s.candidates, cpuCapacityCandidate{
+			cores:  cores,
+			source: capacitySource(resource),
+		})
+	}
+}
+
+func (s *cpuCapacityReadState) err() error {
+	var keys []string
+	for key := range s.readErrors {
+		// 同一 cgroup 文件系统视图可能被 bind mount 到多个位置。
+		// 只要等价视图中至少一个位置读取成功，就不让另一个位置的权限或路径错误覆盖有效结果。
+		if _, ok := s.successfulReads[key]; !ok {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+
+	var result []error
+	for _, key := range keys {
+		result = append(result, s.readErrors[key]...)
+	}
+	return errors.Join(result...)
+}
+
+func (m cgroupMount) readKey(resource string) string {
+	controllers := append([]string(nil), m.controllers...)
+	sort.Strings(controllers)
+	// mountinfo 的 major:minor 与 root 共同标识实际文件系统视图；
+	// mountPoint 只是该视图在当前 namespace 中的挂载位置，不能用于判定是否等价。
+	return strings.Join([]string{
+		resource,
+		m.device,
+		m.fsType,
+		m.root,
+		strings.Join(controllers, ","),
+	}, "\x00")
+}
+
+func capacitySource(resource string) string {
+	switch resource {
+	case "v1_quota":
+		return cpuCapacitySourceCgroupV1Quota
+	case "v1_cpuset":
+		return cpuCapacitySourceCgroupV1Set
+	case "v2_quota":
+		return cpuCapacitySourceCgroupV2Quota
+	case "v2_cpuset":
+		return cpuCapacitySourceCgroupV2Set
+	default:
+		return ""
+	}
 }
 
 func readV2Quota(dirs []string) (cores float64, limited, readable bool, resultErr error) {
@@ -338,10 +389,13 @@ func parseCPUSet(value string) (int, error) {
 	return total, nil
 }
 
-func hierarchyDirs(mount cgroupMount, cgroupPath string) ([]string, bool) {
-	leaf, ok := resolveCgroupPath(mount, cgroupPath)
+func hierarchyDirs(mount cgroupMount, cgroupPath string) ([]string, bool, error) {
+	leaf, ok, err := resolveCgroupPath(mount, cgroupPath)
+	if err != nil {
+		return nil, false, err
+	}
 	if !ok {
-		return nil, false
+		return nil, false, nil
 	}
 
 	mountPoint := filepath.Clean(mount.mountPoint)
@@ -354,14 +408,20 @@ func hierarchyDirs(mount cgroupMount, cgroupPath string) ([]string, bool) {
 		}
 		parent := filepath.Dir(current)
 		if parent == current || !pathWithinMount(parent, mountPoint) {
-			return nil, false
+			return nil, false, nil
 		}
 		current = parent
 	}
-	return dirs, true
+	return dirs, true, nil
 }
 
-func resolveCgroupPath(mount cgroupMount, cgroupPath string) (string, bool) {
+func resolveCgroupPath(mount cgroupMount, cgroupPath string) (string, bool, error) {
+	if hasParentPathSegment(mount.root) {
+		return "", false, fmt.Errorf(
+			"cannot safely resolve cgroup mount root %q at %q",
+			mount.root, mount.mountPoint,
+		)
+	}
 	mountRoot := cleanCgroupPath(mount.root)
 	processPath := cleanCgroupPath(cgroupPath)
 
@@ -378,14 +438,23 @@ func resolveCgroupPath(mount cgroupMount, cgroupPath string) (string, bool) {
 	case strings.HasPrefix(processPath, mountRoot+"/"):
 		relative = strings.TrimPrefix(processPath, mountRoot+"/")
 	default:
-		return "", false
+		return "", false, nil
 	}
 
 	resolved := filepath.Join(filepath.Clean(mount.mountPoint), filepath.FromSlash(relative))
 	if !pathWithinMount(resolved, filepath.Clean(mount.mountPoint)) {
-		return "", false
+		return "", false, nil
 	}
-	return resolved, true
+	return resolved, true, nil
+}
+
+func hasParentPathSegment(value string) bool {
+	for _, segment := range strings.Split(strings.TrimSpace(value), "/") {
+		if segment == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 func cleanCgroupPath(value string) string {
@@ -475,6 +544,7 @@ func parseMountInfo(filename string) ([]cgroupMount, error) {
 		mount := cgroupMount{
 			root:       unescapeMountInfoPath(fields[3]),
 			mountPoint: unescapeMountInfoPath(fields[4]),
+			device:     fields[2],
 			fsType:     fsType,
 		}
 		if fsType == "cgroup" {

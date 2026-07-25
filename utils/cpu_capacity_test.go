@@ -122,6 +122,29 @@ func TestCgroupCPUCapacitySupportsNamespacedMountRoot(t *testing.T) {
 	assert.Equal(t, cpuCapacitySourceCgroupV2Quota, capacity.Source)
 }
 
+func TestCgroupCPUCapacityRejectsAmbiguousNamespacedMountRoot(t *testing.T) {
+	cgroupRoot, procRoot := newTestCgroupRoots(t)
+	writeCgroupTestFile(t, filepath.Join(procRoot, "self", "cgroup"), "0::/\n")
+	writeCgroupTestFile(t, filepath.Join(procRoot, "self", "mountinfo"),
+		"36 25 0:32 /.. /sys/fs/cgroup rw - cgroup2 cgroup rw\n")
+	writeCgroupTestFile(t, filepath.Join(cgroupRoot, "cpu.max"), "max 100000\n")
+
+	reader := newCgroupCPUCapacityReaderWithRoots(cgroupRoot, procRoot)
+	_, err := reader.Capacity()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `cannot safely resolve cgroup mount root "/.."`)
+
+	controller, err := newAdaptiveScanController(AdaptiveScanSettings{
+		MinScanFrequency: 100 * time.Millisecond,
+		ScanCPUPercent:   5,
+		ControlInterval:  time.Second,
+	}, reader)
+	require.NoError(t, err)
+	assert.Equal(t, cpuCapacitySourceFallback, controller.snapshot().CPUCapacitySource)
+	assert.InDelta(t, 0.05, controller.snapshot().TargetDuty, 0.0001)
+}
+
 func TestCgroupCPUCapacitySelectsMatchingV2Mount(t *testing.T) {
 	for _, unrelatedFirst := range []bool{false, true} {
 		t.Run(fmt.Sprintf("unrelated_first_%t", unrelatedFirst), func(t *testing.T) {
@@ -149,6 +172,51 @@ func TestCgroupCPUCapacitySelectsMatchingV2Mount(t *testing.T) {
 	}
 }
 
+func TestCgroupCPUCapacityUsesHealthyEquivalentV2Mount(t *testing.T) {
+	for _, brokenFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("broken_first_%t", brokenFirst), func(t *testing.T) {
+			cgroupRoot, procRoot := newTestCgroupRoots(t)
+			validLeaf := filepath.Join(cgroupRoot, "service")
+			brokenLeaf := filepath.Join(cgroupRoot, "duplicate", "service")
+			writeCgroupTestFile(t, filepath.Join(procRoot, "self", "cgroup"), "0::/service\n")
+
+			validMount := "36 25 0:32 / /sys/fs/cgroup rw - cgroup2 cgroup rw\n"
+			brokenMount := "37 25 0:32 / /sys/fs/cgroup/duplicate rw - cgroup2 cgroup rw\n"
+			mountInfo := validMount + brokenMount
+			if brokenFirst {
+				mountInfo = brokenMount + validMount
+			}
+			writeCgroupTestFile(t, filepath.Join(procRoot, "self", "mountinfo"), mountInfo)
+			writeCgroupTestFile(t, filepath.Join(validLeaf, "cpu.max"), "10000 100000\n")
+			require.NoError(t, os.MkdirAll(filepath.Join(brokenLeaf, "cpu.max"), 0o755))
+
+			capacity, err := newCgroupCPUCapacityReaderWithRoots(cgroupRoot, procRoot).Capacity()
+
+			require.NoError(t, err)
+			assert.InDelta(t, 0.1, capacity.EffectiveCores, 0.00001)
+			assert.True(t, capacity.Limited)
+			assert.Equal(t, cpuCapacitySourceCgroupV2Quota, capacity.Source)
+		})
+	}
+}
+
+func TestCgroupCPUCapacityDoesNotHideDistinctMountReadError(t *testing.T) {
+	cgroupRoot, procRoot := newTestCgroupRoots(t)
+	validLeaf := filepath.Join(cgroupRoot, "service")
+	brokenLeaf := filepath.Join(cgroupRoot, "distinct", "service")
+	writeCgroupTestFile(t, filepath.Join(procRoot, "self", "cgroup"), "0::/service\n")
+	writeCgroupTestFile(t, filepath.Join(procRoot, "self", "mountinfo"),
+		"36 25 0:32 / /sys/fs/cgroup rw - cgroup2 cgroup rw\n"+
+			"37 25 0:33 / /sys/fs/cgroup/distinct rw - cgroup2 cgroup rw\n")
+	writeCgroupTestFile(t, filepath.Join(validLeaf, "cpu.max"), "10000 100000\n")
+	require.NoError(t, os.MkdirAll(filepath.Join(brokenLeaf, "cpu.max"), 0o755))
+
+	_, err := newCgroupCPUCapacityReaderWithRoots(cgroupRoot, procRoot).Capacity()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), filepath.Join(brokenLeaf, "cpu.max"))
+}
+
 func TestCgroupCPUCapacitySelectsMatchingV1Mount(t *testing.T) {
 	for _, unrelatedFirst := range []bool{false, true} {
 		t.Run(fmt.Sprintf("unrelated_first_%t", unrelatedFirst), func(t *testing.T) {
@@ -166,6 +234,36 @@ func TestCgroupCPUCapacitySelectsMatchingV1Mount(t *testing.T) {
 			writeCgroupTestFile(t, filepath.Join(procRoot, "self", "mountinfo"), mountInfo)
 			writeCgroupTestFile(t, filepath.Join(leaf, "cpu.cfs_quota_us"), "10000\n")
 			writeCgroupTestFile(t, filepath.Join(leaf, "cpu.cfs_period_us"), "100000\n")
+
+			capacity, err := newCgroupCPUCapacityReaderWithRoots(cgroupRoot, procRoot).Capacity()
+
+			require.NoError(t, err)
+			assert.InDelta(t, 0.1, capacity.EffectiveCores, 0.00001)
+			assert.True(t, capacity.Limited)
+			assert.Equal(t, cpuCapacitySourceCgroupV1Quota, capacity.Source)
+		})
+	}
+}
+
+func TestCgroupCPUCapacityUsesHealthyEquivalentV1Mount(t *testing.T) {
+	for _, brokenFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("broken_first_%t", brokenFirst), func(t *testing.T) {
+			cgroupRoot, procRoot := newTestCgroupRoots(t)
+			validLeaf := filepath.Join(cgroupRoot, "cpu", "service")
+			brokenLeaf := filepath.Join(cgroupRoot, "duplicate", "service")
+			writeCgroupTestFile(t, filepath.Join(procRoot, "self", "cgroup"),
+				"2:cpu,cpuacct:/service\n")
+
+			validMount := "36 25 0:32 / /sys/fs/cgroup/cpu rw - cgroup cgroup rw,cpu,cpuacct\n"
+			brokenMount := "37 25 0:32 / /sys/fs/cgroup/duplicate rw - cgroup cgroup rw,cpu,cpuacct\n"
+			mountInfo := validMount + brokenMount
+			if brokenFirst {
+				mountInfo = brokenMount + validMount
+			}
+			writeCgroupTestFile(t, filepath.Join(procRoot, "self", "mountinfo"), mountInfo)
+			writeCgroupTestFile(t, filepath.Join(validLeaf, "cpu.cfs_quota_us"), "10000\n")
+			writeCgroupTestFile(t, filepath.Join(validLeaf, "cpu.cfs_period_us"), "100000\n")
+			require.NoError(t, os.MkdirAll(filepath.Join(brokenLeaf, "cpu.cfs_quota_us"), 0o755))
 
 			capacity, err := newCgroupCPUCapacityReaderWithRoots(cgroupRoot, procRoot).Capacity()
 
