@@ -108,9 +108,9 @@ func TestCgroupCPUCapacityUsesTightestV1HierarchyLimit(t *testing.T) {
 	assert.Equal(t, cpuCapacitySourceCgroupV1Quota, capacity.Source)
 }
 
-func TestCgroupCPUCapacitySupportsNamespacedMountRoot(t *testing.T) {
+func TestCgroupCPUCapacitySupportsSubtreeMountRoot(t *testing.T) {
 	cgroupRoot, procRoot := newTestCgroupRoots(t)
-	writeCgroupTestFile(t, filepath.Join(procRoot, "self", "cgroup"), "0::/\n")
+	writeCgroupTestFile(t, filepath.Join(procRoot, "self", "cgroup"), "0::/kubepods/pod1/container1\n")
 	writeCgroupTestFile(t, filepath.Join(procRoot, "self", "mountinfo"),
 		"36 25 0:32 /kubepods/pod1/container1 /sys/fs/cgroup rw - cgroup2 cgroup rw\n")
 	writeCgroupTestFile(t, filepath.Join(cgroupRoot, "cpu.max"), "10000 100000\n")
@@ -120,6 +120,31 @@ func TestCgroupCPUCapacitySupportsNamespacedMountRoot(t *testing.T) {
 	require.NoError(t, err)
 	assert.InDelta(t, 0.1, capacity.EffectiveCores, 0.0001)
 	assert.Equal(t, cpuCapacitySourceCgroupV2Quota, capacity.Source)
+}
+
+func TestCgroupCPUCapacityDoesNotMatchRootProcessToDescendantMount(t *testing.T) {
+	for _, descendantFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("descendant_first_%t", descendantFirst), func(t *testing.T) {
+			cgroupRoot, procRoot := newTestCgroupRoots(t)
+			writeCgroupTestFile(t, filepath.Join(procRoot, "self", "cgroup"), "0::/\n")
+
+			rootMount := "36 25 0:32 / /sys/fs/cgroup rw - cgroup2 cgroup rw\n"
+			descendantMount := "37 25 0:32 /limited /sys/fs/cgroup/descendant rw - cgroup2 cgroup rw\n"
+			mountInfo := rootMount + descendantMount
+			if descendantFirst {
+				mountInfo = descendantMount + rootMount
+			}
+			writeCgroupTestFile(t, filepath.Join(procRoot, "self", "mountinfo"), mountInfo)
+			writeCgroupTestFile(t, filepath.Join(cgroupRoot, "cpu.max"), "max 100000\n")
+			writeCgroupTestFile(t, filepath.Join(cgroupRoot, "descendant", "cpu.max"), "10000 100000\n")
+
+			capacity, err := newCgroupCPUCapacityReaderWithRoots(cgroupRoot, procRoot).Capacity()
+
+			require.NoError(t, err)
+			assert.False(t, capacity.Limited)
+			assert.Equal(t, cpuCapacitySourceUnlimited, capacity.Source)
+		})
+	}
 }
 
 func TestCgroupCPUCapacityRejectsAmbiguousNamespacedMountRoot(t *testing.T) {
@@ -143,6 +168,20 @@ func TestCgroupCPUCapacityRejectsAmbiguousNamespacedMountRoot(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, cpuCapacitySourceFallback, controller.snapshot().CPUCapacitySource)
 	assert.InDelta(t, 0.05, controller.snapshot().TargetDuty, 0.0001)
+	assert.Equal(t, 30*time.Second, controller.NextInterval(1, 30*time.Second, 50*time.Millisecond))
+}
+
+func TestCgroupCPUCapacityRejectsParentTraversalInProcessPath(t *testing.T) {
+	cgroupRoot, procRoot := newTestCgroupRoots(t)
+	writeCgroupTestFile(t, filepath.Join(procRoot, "self", "cgroup"), "0::/../sibling\n")
+	writeCgroupTestFile(t, filepath.Join(procRoot, "self", "mountinfo"),
+		"36 25 0:32 / /sys/fs/cgroup rw - cgroup2 cgroup rw\n")
+	writeCgroupTestFile(t, filepath.Join(cgroupRoot, "sibling", "cpu.max"), "10000 100000\n")
+
+	_, err := newCgroupCPUCapacityReaderWithRoots(cgroupRoot, procRoot).Capacity()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `cannot safely resolve cgroup process path "/../sibling"`)
 }
 
 func TestCgroupCPUCapacitySelectsMatchingV2Mount(t *testing.T) {

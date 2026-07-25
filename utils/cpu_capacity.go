@@ -422,15 +422,17 @@ func resolveCgroupPath(mount cgroupMount, cgroupPath string) (string, bool, erro
 			mount.root, mount.mountPoint,
 		)
 	}
+	if hasParentPathSegment(cgroupPath) {
+		return "", false, fmt.Errorf(
+			"cannot safely resolve cgroup process path %q at %q",
+			cgroupPath, mount.mountPoint,
+		)
+	}
 	mountRoot := cleanCgroupPath(mount.root)
 	processPath := cleanCgroupPath(cgroupPath)
 
 	var relative string
 	switch {
-	case processPath == "/":
-		// 在 cgroup namespace 中，当前进程通常看到自身所在 cgroup 为 "/"；
-		// mountinfo.root 已经指向真实宿主层级，因此 mountPoint 本身就是 leaf。
-		relative = ""
 	case mountRoot == "/":
 		relative = strings.TrimPrefix(processPath, "/")
 	case processPath == mountRoot:

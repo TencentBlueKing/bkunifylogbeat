@@ -157,6 +157,7 @@ type adaptiveScanCPUCapacityState struct {
 	targetDuty     float64
 	effectiveCores float64
 	source         string
+	known          bool
 }
 
 // NewAdaptiveScanController 创建自适应扫描控制器。
@@ -195,7 +196,8 @@ func newAdaptiveScanController(settings AdaptiveScanSettings, capacityReader cpu
 		targetDuty: controller.configuredTargetDuty,
 		source:     cpuCapacitySourceFallback,
 	})
-	// 容量探测失败不能阻断采集器启动；冷启动保留 PR #140 的单核预算语义。
+	// 容量探测失败不能阻断采集器启动；首次成功前只保留 fallback 观测值，
+	// 实际扫描周期维持原配置，避免在未知 CPU 配额下错误加速。
 	_ = controller.refreshCPUCapacity()
 	controller.setMultiplier(adaptiveScanInitialMultiple)
 	return controller, nil
@@ -221,6 +223,7 @@ func (c *AdaptiveScanController) NextInterval(inputID uint64, base, scanDuration
 			(1-adaptiveScanEWMAAlpha)*state.ewmaScanNanos
 	}
 	ewmaScanNanos := state.ewmaScanNanos
+	capacity := c.capacityState()
 	minimum := c.minScanFrequency
 	if base < minimum {
 		minimum = base
@@ -228,10 +231,12 @@ func (c *AdaptiveScanController) NextInterval(inputID uint64, base, scanDuration
 
 	// 第一层局部控制：local = EWMA(scanDuration) / targetDuty。
 	// 例如目标占空比为 5%，一次扫描耗时 50ms，则局部周期应约为 1s。
-	localNanos := ewmaScanNanos / c.targetDuty()
 	local := base
-	if localNanos < float64(base) {
-		local = clampDuration(time.Duration(localNanos), minimum, base)
+	if capacity.known {
+		localNanos := ewmaScanNanos / capacity.targetDuty
+		if localNanos < float64(base) {
+			local = clampDuration(time.Duration(localNanos), minimum, base)
+		}
 	}
 	// governor 使用各 input 的稳态成本模型求解全局 multiplier；
 	// base/local 决定该 input 退回原配置周期前仍有多少调节空间。
@@ -304,6 +309,7 @@ func (c *AdaptiveScanController) refreshCPUCapacity() error {
 	state := &adaptiveScanCPUCapacityState{
 		targetDuty: c.configuredTargetDuty,
 		source:     capacity.Source,
+		known:      true,
 	}
 	if state.source == "" {
 		state.source = cpuCapacitySourceFallback

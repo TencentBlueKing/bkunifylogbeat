@@ -6,6 +6,7 @@
 package utils
 
 import (
+	"errors"
 	"math"
 	"testing"
 	"time"
@@ -63,6 +64,32 @@ func TestAdaptiveScanControllerUsesFirstSampleImmediately(t *testing.T) {
 
 	assert.Equal(t, 500*time.Millisecond, got)
 	assert.Equal(t, time.Millisecond, controller.TotalScanDuration())
+}
+
+func TestAdaptiveScanControllerKeepsBaseUntilCPUCapacityIsKnown(t *testing.T) {
+	reader := &staticCPUCapacityReader{err: errors.New("capacity unavailable")}
+	controller, err := newAdaptiveScanController(AdaptiveScanSettings{
+		MinScanFrequency: 100 * time.Millisecond,
+		ScanCPUPercent:   5,
+		ControlInterval:  time.Second,
+	}, reader)
+	assert.NoError(t, err)
+
+	base := 30 * time.Second
+	scanDuration := 50 * time.Millisecond
+	assert.Equal(t, base, controller.NextInterval(1, base, scanDuration))
+	assert.False(t, controller.capacityState().known)
+	assert.Equal(t, scanDuration, controller.TotalScanDuration())
+
+	reader.err = nil
+	reader.capacity = cpuCapacity{
+		EffectiveCores: 0.1,
+		Source:         cpuCapacitySourceCgroupV2Quota,
+		Limited:        true,
+	}
+	assert.NoError(t, controller.refreshCPUCapacity())
+	assert.True(t, controller.capacityState().known)
+	assert.InDelta(t, 10*time.Second, controller.NextInterval(1, base, scanDuration), float64(time.Nanosecond))
 }
 
 func TestAdaptiveScanControllerKeepsIndependentEWMAByInput(t *testing.T) {
