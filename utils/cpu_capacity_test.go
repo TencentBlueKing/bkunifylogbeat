@@ -122,6 +122,61 @@ func TestCgroupCPUCapacitySupportsNamespacedMountRoot(t *testing.T) {
 	assert.Equal(t, cpuCapacitySourceCgroupV2Quota, capacity.Source)
 }
 
+func TestCgroupCPUCapacitySelectsMatchingV2Mount(t *testing.T) {
+	for _, unrelatedFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("unrelated_first_%t", unrelatedFirst), func(t *testing.T) {
+			cgroupRoot, procRoot := newTestCgroupRoots(t)
+			leaf := filepath.Join(cgroupRoot, "kubepods", "pod1", "container1")
+			writeCgroupTestFile(t, filepath.Join(procRoot, "self", "cgroup"),
+				"0::/kubepods/pod1/container1\n")
+
+			validMount := "36 25 0:32 / /sys/fs/cgroup rw - cgroup2 cgroup rw\n"
+			unrelatedMount := "37 25 0:32 /kubepods/pod2 /sys/fs/cgroup/other rw - cgroup2 cgroup rw\n"
+			mountInfo := validMount + unrelatedMount
+			if unrelatedFirst {
+				mountInfo = unrelatedMount + validMount
+			}
+			writeCgroupTestFile(t, filepath.Join(procRoot, "self", "mountinfo"), mountInfo)
+			writeCgroupTestFile(t, filepath.Join(leaf, "cpu.max"), "10000 100000\n")
+
+			capacity, err := newCgroupCPUCapacityReaderWithRoots(cgroupRoot, procRoot).Capacity()
+
+			require.NoError(t, err)
+			assert.InDelta(t, 0.1, capacity.EffectiveCores, 0.00001)
+			assert.True(t, capacity.Limited)
+			assert.Equal(t, cpuCapacitySourceCgroupV2Quota, capacity.Source)
+		})
+	}
+}
+
+func TestCgroupCPUCapacitySelectsMatchingV1Mount(t *testing.T) {
+	for _, unrelatedFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("unrelated_first_%t", unrelatedFirst), func(t *testing.T) {
+			cgroupRoot, procRoot := newTestCgroupRoots(t)
+			leaf := filepath.Join(cgroupRoot, "cpu", "workloads", "collector")
+			writeCgroupTestFile(t, filepath.Join(procRoot, "self", "cgroup"),
+				"2:cpu,cpuacct:/workloads/collector\n")
+
+			validMount := "36 25 0:32 / /sys/fs/cgroup/cpu rw - cgroup cgroup rw,cpu,cpuacct\n"
+			unrelatedMount := "37 25 0:32 /other /sys/fs/cgroup/other rw - cgroup cgroup rw,cpu,cpuacct\n"
+			mountInfo := validMount + unrelatedMount
+			if unrelatedFirst {
+				mountInfo = unrelatedMount + validMount
+			}
+			writeCgroupTestFile(t, filepath.Join(procRoot, "self", "mountinfo"), mountInfo)
+			writeCgroupTestFile(t, filepath.Join(leaf, "cpu.cfs_quota_us"), "10000\n")
+			writeCgroupTestFile(t, filepath.Join(leaf, "cpu.cfs_period_us"), "100000\n")
+
+			capacity, err := newCgroupCPUCapacityReaderWithRoots(cgroupRoot, procRoot).Capacity()
+
+			require.NoError(t, err)
+			assert.InDelta(t, 0.1, capacity.EffectiveCores, 0.00001)
+			assert.True(t, capacity.Limited)
+			assert.Equal(t, cpuCapacitySourceCgroupV1Quota, capacity.Source)
+		})
+	}
+}
+
 func TestCgroupCPUCapacityUsesCPUSetWhenTighter(t *testing.T) {
 	reader, cgroupLeaf := newTestCgroupCapacityReader(t, 2, 4)
 	writeCgroupTestFile(t, filepath.Join(cgroupLeaf, "cpuset.cpus.effective"), "2\n")

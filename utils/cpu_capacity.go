@@ -52,8 +52,8 @@ type cgroupCPUCapacityReader struct {
 }
 
 type cgroupLayout struct {
-	v2Mount          *cgroupMount
-	controllerMounts map[string]cgroupMount
+	v2Mounts         []cgroupMount
+	controllerMounts map[string][]cgroupMount
 	controllerPaths  map[string]string
 }
 
@@ -93,10 +93,12 @@ func (r *cgroupCPUCapacityReader) Capacity() (cpuCapacity, error) {
 	var readErrors []error
 	seen := false
 
-	if r.layout.v2Mount != nil {
-		cgroupPath, pathFound := r.layout.controllerPaths[""]
-		dirs, resolved := hierarchyDirs(*r.layout.v2Mount, cgroupPath)
-		if pathFound && resolved {
+	if cgroupPath, pathFound := r.layout.controllerPaths[""]; pathFound {
+		for _, mount := range r.layout.v2Mounts {
+			dirs, resolved := hierarchyDirs(mount, cgroupPath)
+			if !resolved {
+				continue
+			}
 			cores, limited, readable, err := readV2Quota(dirs)
 			if err != nil {
 				readErrors = append(readErrors, err)
@@ -127,9 +129,12 @@ func (r *cgroupCPUCapacityReader) Capacity() (cpuCapacity, error) {
 		}
 	}
 
-	if mount, ok := r.layout.controllerMounts["cpu"]; ok {
-		cgroupPath, pathFound := r.layout.controllerPaths["cpu"]
-		if dirs, resolved := hierarchyDirs(mount, cgroupPath); pathFound && resolved {
+	if cgroupPath, pathFound := r.layout.controllerPaths["cpu"]; pathFound {
+		for _, mount := range r.layout.controllerMounts["cpu"] {
+			dirs, resolved := hierarchyDirs(mount, cgroupPath)
+			if !resolved {
+				continue
+			}
 			cores, limited, readable, err := readV1Quota(dirs)
 			if err != nil {
 				readErrors = append(readErrors, err)
@@ -145,9 +150,12 @@ func (r *cgroupCPUCapacityReader) Capacity() (cpuCapacity, error) {
 			}
 		}
 	}
-	if mount, ok := r.layout.controllerMounts["cpuset"]; ok {
-		cgroupPath, pathFound := r.layout.controllerPaths["cpuset"]
-		if dirs, resolved := hierarchyDirs(mount, cgroupPath); pathFound && resolved {
+	if cgroupPath, pathFound := r.layout.controllerPaths["cpuset"]; pathFound {
+		for _, mount := range r.layout.controllerMounts["cpuset"] {
+			dirs, resolved := hierarchyDirs(mount, cgroupPath)
+			if !resolved {
+				continue
+			}
 			cores, limited, readable, err := readCPUSet(dirs, []string{"cpuset.cpus.effective", "cpuset.cpus"})
 			if err != nil {
 				readErrors = append(readErrors, err)
@@ -405,22 +413,21 @@ func (r *cgroupCPUCapacityReader) loadLayout() (cgroupLayout, error) {
 	}
 
 	layout := cgroupLayout{
-		controllerMounts: make(map[string]cgroupMount),
+		controllerMounts: make(map[string][]cgroupMount),
 		controllerPaths:  controllerPaths,
 	}
 	for _, mount := range mounts {
 		mount.mountPoint = r.rebaseMountPoint(mount.mountPoint)
 		switch mount.fsType {
 		case "cgroup2":
-			current := mount
-			layout.v2Mount = &current
+			layout.v2Mounts = append(layout.v2Mounts, mount)
 		case "cgroup":
 			for _, controller := range mount.controllers {
-				layout.controllerMounts[controller] = mount
+				layout.controllerMounts[controller] = append(layout.controllerMounts[controller], mount)
 			}
 		}
 	}
-	if layout.v2Mount == nil && len(layout.controllerMounts) == 0 {
+	if len(layout.v2Mounts) == 0 && len(layout.controllerMounts) == 0 {
 		return cgroupLayout{}, errors.New("no cgroup mounts found")
 	}
 	return layout, nil
