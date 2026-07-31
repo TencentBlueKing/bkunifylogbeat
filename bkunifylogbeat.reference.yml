@@ -105,3 +105,37 @@ bkunifylogbeat.local:
           key_name: "event_id"
           regex: "keep records by regex"
 
+  - dataid: 123
+    type: kafka
+    # kafka broker 地址列表
+    hosts: ["kafka-1:9093", "kafka-2:9093"]
+    # 消费的 topic 列表
+    topics: ["logs"]
+    # 消费组，同一 group_id 的多个采集器实例共同分摊 partition
+    group_id: "bkunifylogbeat_123"
+    # 消费组无已提交位点时的起始位置，可选 oldest/newest，默认 newest
+    initial_offset: "newest"
+
+    # SASL 认证：配置 username 后启用，密码必填
+    username: "collector"
+    password: "xxxx"
+    # SASL 机制，可选 PLAIN / SCRAM-SHA-256 / SCRAM-SHA-512（大小写不敏感），
+    # 不配置默认为 PLAIN
+    sasl_mechanism: "SCRAM-SHA-512"
+
+    # TLS 配置：与 SASL 组合即为 SASL_SSL
+    ssl:
+      enabled: true
+      certificate_authorities: ["/etc/bkunifylogbeat/certs/ca.crt"]
+
+    # 消息正文分列分隔符与过滤规则，与文件采集一致
+    delimiter: "|"
+    filters:
+      - conditions:
+          - index: 2
+            key: "ERROR"
+            op: "eq"
+
+    ext_meta:
+      bk_biz_id: "2"
+
