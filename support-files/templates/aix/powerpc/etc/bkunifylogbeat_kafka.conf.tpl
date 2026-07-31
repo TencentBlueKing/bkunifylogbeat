@@ -11,6 +11,9 @@ local: {% for item in local %}
       {% if item.ssl is defined and item.ssl %}ssl: {{ item.ssl }}{% endif %}
       username: '{{ item.get('username', '') }}'
       password: '{{ item.get('password', '') }}'
+      {%- if item.sasl_mechanism is defined and item.sasl_mechanism %}
+      sasl_mechanism: '{{ item.sasl_mechanism }}'
+      {%- endif %}
 
       group_id: '{% if item.group_id is defined and item.group_id %}{{ item.get('group_id') }}{% else %}bkunifylogbeat_{{ dataid | int }}{% endif %}'
 

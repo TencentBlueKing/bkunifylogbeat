@@ -48,6 +48,36 @@ func TestTaskConfig_Same(t *testing.T) {
 	assert.False(t, taskConfig1.Same(taskConfig3))
 }
 
+// TestKafkaTaskConfig 测试kafka任务配置透传
+func TestKafkaTaskConfig(t *testing.T) {
+	vars := map[string]interface{}{
+		"dataid":         "999990001",
+		"type":           "kafka",
+		"hosts":          []string{"kafka-1:9093"},
+		"topics":         []string{"logs"},
+		"group_id":       "bkunifylogbeat_999990001",
+		"username":       "collector",
+		"password":       "secret",
+		"sasl_mechanism": "SCRAM-SHA-512",
+		"initial_offset": "newest",
+	}
+
+	taskConfig, err := CreateTaskConfig(vars)
+	assert.NoError(t, err)
+	assert.Equal(t, "kafka", taskConfig.Type)
+
+	// kafka 专属字段不参与 TaskConfig 结构，需保留在 RawConfig 中透传给 kafka input
+	mechanism, err := taskConfig.RawConfig.String("sasl_mechanism", -1)
+	assert.NoError(t, err)
+	assert.Equal(t, "SCRAM-SHA-512", mechanism)
+
+	var kafkaCfg struct {
+		Hosts []string `config:"hosts"`
+	}
+	assert.NoError(t, taskConfig.RawConfig.Unpack(&kafkaCfg))
+	assert.Equal(t, []string{"kafka-1:9093"}, kafkaCfg.Hosts)
+}
+
 func TestLoadMetaFile(t *testing.T) {
 	f, err := os.CreateTemp("", "meta.file")
 	assert.NoError(t, err)
