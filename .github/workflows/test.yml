@@ -1,0 +1,28 @@
+name: Unit Tests
+
+on:
+  push:
+    branches: [master, stag]
+    paths:
+      - '**'
+  pull_request:
+    branches: [master, stag]
+    paths:
+      - '**'
+  schedule:
+    - cron: "0 10 * * *"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Unit tests
+        run: go test -count=1 ./...
+      - name: Unit tests with Sonic
+        run: go test -count=1 -tags jsonsonic ./...
