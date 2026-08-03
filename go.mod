@@ -7,13 +7,13 @@ toolchain go1.24.11
 require (
 	github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse v1.9.1-alpha.1
 	github.com/TencentBlueKing/bkmonitor-datalink/pkg/utils v0.3.0
-	github.com/bytedance/sonic v1.12.10
+	github.com/bytedance/sonic v1.15.0
 	github.com/dustin/go-humanize v1.0.0
 	github.com/elastic/beats v7.1.1+incompatible
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/pkg/errors v0.9.1
 	github.com/shirou/gopsutil v3.21.8+incompatible
-	github.com/stretchr/testify v1.8.3
+	github.com/stretchr/testify v1.10.0
 	github.com/tklauser/go-sysconf v0.3.9
 )
 
@@ -23,11 +23,12 @@ require (
 	github.com/andrewkroh/sys v0.0.0-20151128191922-287798fe3e43 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/boltdb/bolt v1.3.1 // indirect
-	github.com/bytedance/sonic/loader v0.2.2 // indirect
+	github.com/bytedance/gopkg v0.1.3 // indirect
+	github.com/bytedance/sonic/loader v0.5.0 // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
-	github.com/cloudwego/base64x v0.1.5 // indirect
+	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/containerd/cgroups v1.0.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
@@ -62,7 +63,7 @@ require (
 	github.com/joeshaw/multierror v0.0.0-20140124173710-69b34d4ec901 // indirect
 	github.com/josharian/intern v1.0.1-0.20211109044230-42b52b674af5 // indirect
 	github.com/klauspost/compress v1.13.6 // indirect
-	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
+	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.12 // indirect
 	github.com/mattn/go-isatty v0.0.14 // indirect
@@ -118,6 +119,6 @@ require (
 
 replace (
 	github.com/Sirupsen/logrus v1.6.0 => github.com/sirupsen/logrus v1.9.3
-	github.com/elastic/beats v7.1.1+incompatible => github.com/TencentBlueking/beats v7.1.56-bk+incompatible
+	github.com/elastic/beats v7.1.1+incompatible => github.com/TencentBlueking/beats v7.1.57-bk+incompatible
 	github.com/sirupsen/logrus v1.8.1 => github.com/sirupsen/logrus v1.9.3
 )

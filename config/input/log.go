@@ -42,6 +42,8 @@ type LogConfig struct {
 	CleanInactive time.Duration `config:"clean_inactive" validate:"min=0"`
 }
 
+const defaultIgnoreOlder = 7 * 24 * time.Hour
+
 func init() {
 	config := beat.MapStr{
 		"enabled":         true,
@@ -56,7 +58,7 @@ func init() {
 		"clean_removed": true,
 
 		// 监听文件变更时间
-		"ignore_older": 7 * 24 * time.Hour,
+		"ignore_older": defaultIgnoreOlder,
 
 		// harvester
 		"tail_files": true,
@@ -93,7 +95,7 @@ func init() {
 		// 特殊配置处理
 		logConfig := &LogConfig{
 			CloseInactive: 5 * time.Minute,
-			IgnoreOlder:   24 * time.Hour,
+			IgnoreOlder:   defaultIgnoreOlder,
 		}
 		err = rawConfig.Unpack(&logConfig)
 		if err != nil {
