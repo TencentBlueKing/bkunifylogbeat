@@ -191,6 +191,9 @@ func TestStateFileIdentifierInode(t *testing.T) {
 		{Source: "/data/logs/new.log", Offset: 30, Timestamp: now, FileStateOS: beatfile.StateOS{Inode: 100, Device: 900}},
 	}
 	newStates = registrar.deduplicateStates(states)
+	sort.Slice(newStates, func(i, j int) bool {
+		return newStates[i].Offset < newStates[j].Offset
+	})
 	assert.Equal(t, len(newStates), 2)
 
 	assert.Equal(t, newStates[0].Source, "/data/logs/old.log")
