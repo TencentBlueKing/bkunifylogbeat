@@ -243,6 +243,16 @@ func TestFieldExtractionConfigValidation(t *testing.T) {
 			message: "field_extraction.pattern cannot be empty",
 		},
 		{
+			name: "unsupported output format",
+			config: map[string]interface{}{
+				"output_format": "v1",
+				"field_extraction": map[string]interface{}{
+					"pattern": `(?P<traceID>\d+)`,
+				},
+			},
+			message: "field_extraction requires output_format v2",
+		},
+		{
 			name: "invalid pattern",
 			config: map[string]interface{}{
 				"field_extraction": map[string]interface{}{"pattern": `(?P<traceID>`},

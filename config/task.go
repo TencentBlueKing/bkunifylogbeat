@@ -386,6 +386,9 @@ func initIDWithConfig(config *TaskConfig) {
 
 func (c *TaskConfig) initFieldExtractionAndDeduplication() error {
 	if c.FieldExtraction != nil {
+		if c.OutputFormat != "v2" && c.OutputFormat != "default" {
+			return fmt.Errorf("field_extraction requires output_format v2")
+		}
 		if c.FieldExtraction.Pattern == "" {
 			return fmt.Errorf("field_extraction.pattern cannot be empty")
 		}
