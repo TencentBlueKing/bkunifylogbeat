@@ -180,7 +180,14 @@ func (p *Processors) process(data *util.Data) *util.Data {
 		outcome := p.transformer.Apply(data)
 		p.recordTransformOutcome(outcome)
 		if outcome.Data == nil {
-			return nil
+			// A transform can intentionally remove every business line from an
+			// event. Keep its file state flowing through Sender so the publisher
+			// ACK still advances the registrar offset. Without this state event,
+			// extraction failures and duplicates at EOF are replayed after reload
+			// or restart.
+			stateData := &util.Data{}
+			stateData.SetState(data.GetState())
+			return stateData
 		}
 		taskData = outcome.Data
 	}

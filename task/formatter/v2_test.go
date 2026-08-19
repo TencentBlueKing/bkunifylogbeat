@@ -32,6 +32,7 @@ import (
 	"github.com/elastic/beats/libbeat/beat"
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
 )
@@ -150,4 +151,18 @@ func TestV2FormatterMountReplace(t *testing.T) {
 
 	assert.Equal(t, "/data/datahub/backup/deeper/d/e/f.log", data["filename"])
 
+}
+
+func TestV2FormatterReturnsNilForStateOnlyEvent(t *testing.T) {
+	taskConfig, err := config.CreateTaskConfig(map[string]interface{}{
+		"dataid":        999990002,
+		"output_format": "v2",
+	})
+	require.NoError(t, err)
+	formatter, err := NewV2Formatter(taskConfig)
+	require.NoError(t, err)
+	stateEvent := &util.Data{}
+	stateEvent.SetState(file.State{Source: "/logs/state-only.log", Offset: 42})
+
+	assert.Nil(t, formatter.Format([]*util.Data{stateEvent}))
 }

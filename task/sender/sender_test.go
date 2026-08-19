@@ -32,6 +32,7 @@ import (
 	"github.com/elastic/beats/libbeat/common"
 	libbeatlogp "github.com/elastic/beats/libbeat/logp"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/formatter"
@@ -191,4 +192,80 @@ func TestSend(t *testing.T) {
 	}
 	time.Sleep(200 * time.Millisecond)
 	assert.Equal(t, sendNums, 4)
+}
+
+func TestStateOnlyEventDoesNotIncreaseBusinessSendMetrics(t *testing.T) {
+	vars, err := common.NewConfigFrom(map[string]interface{}{
+		"dataid":        999990099,
+		"output_format": "v2",
+		"package":       false,
+	})
+	require.NoError(t, err)
+	taskConfig, err := config.NewTaskConfig(cfg.Config{}, vars)
+	require.NoError(t, err)
+	taskNode := tests.MockTaskNode(taskConfig)
+	sender, err := NewSender(taskConfig, taskNode)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		sender.CloseOnce.Do(func() { close(sender.End) })
+		sender.WaitUntilGameOver()
+	})
+	crawlerSendBefore := taskNode.CrawlerSendTotal.Get()
+	senderReceiveBefore := taskNode.SenderReceive.Get()
+	senderStateBefore := taskNode.SenderState.Get()
+	state := tests.MockLogEvent("/logs/state-only.log", "")
+
+	sender.In <- state
+	select {
+	case raw := <-taskNode.In:
+		published := raw.(beat.Event)
+		assert.Nil(t, published.Fields)
+		assert.Equal(t, state.GetState(), published.Private)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for state-only event")
+	}
+
+	assert.Equal(t, crawlerSendBefore, taskNode.CrawlerSendTotal.Get())
+	assert.Equal(t, senderReceiveBefore, taskNode.SenderReceive.Get())
+	assert.Equal(t, senderStateBefore+1, taskNode.SenderState.Get())
+}
+
+func TestPackagedStateOnlyEventFlushesBusinessDataAndAdvancesState(t *testing.T) {
+	vars, err := common.NewConfigFrom(map[string]interface{}{
+		"dataid":        999990098,
+		"output_format": "v2",
+		"package":       true,
+		"package_count": 10,
+	})
+	require.NoError(t, err)
+	taskConfig, err := config.NewTaskConfig(cfg.Config{}, vars)
+	require.NoError(t, err)
+	taskNode := tests.MockTaskNode(taskConfig)
+	sender, err := NewSender(taskConfig, taskNode)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		sender.CloseOnce.Do(func() { close(sender.End) })
+		sender.WaitUntilGameOver()
+	})
+
+	business := tests.MockLogEvent("/logs/packaged.log", "kept")
+	state := tests.MockLogEvent("/logs/packaged.log", "")
+	advancedState := state.GetState()
+	advancedState.Offset = 2
+	state.SetState(advancedState)
+
+	sender.In <- business
+	sender.In <- state
+	select {
+	case raw := <-taskNode.In:
+		published := raw.(beat.Event)
+		require.NotNil(t, published.Fields)
+		items, ok := published.Fields["items"].([]beat.MapStr)
+		require.True(t, ok)
+		require.Len(t, items, 1)
+		assert.Equal(t, "kept", items[0]["data"])
+		assert.Equal(t, advancedState, published.Private)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for packaged event")
+	}
 }

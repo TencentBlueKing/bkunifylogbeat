@@ -176,8 +176,10 @@ func (send *Sender) Run() {
 
 		case e := <-send.In:
 			event := e.(*util.Data)
-			// update metric
-			{
+			// State-only events advance the registrar but are not business lines.
+			// Event.Count returns one when Fields and Texts are both empty, so only
+			// update normal send metrics for events that carry actual data.
+			if event.Event.Fields != nil || event.Event.HasTexts() {
 				beatEvent := event.GetEvent()
 				eventCount := int64(beatEvent.Count())
 				base.CrawlerSendTotal.Add(eventCount)
