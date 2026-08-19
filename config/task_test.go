@@ -25,6 +25,7 @@ package config
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -107,4 +108,198 @@ foobar
 	}
 
 	assert.Equal(t, excepted, meta)
+}
+
+func TestFieldExtractionAndDeduplicationConfig(t *testing.T) {
+	vars := map[string]interface{}{
+		"dataid": "999990101",
+		"field_extraction": map[string]interface{}{
+			"pattern":       `trace=(?P<traceID>\d+);proc=(?P<proc>[A-Z]+)`,
+			"deduplication": map[string]interface{}{"enabled": true},
+		},
+	}
+
+	taskConfig, err := CreateTaskConfig(vars)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"traceID", "proc"}, taskConfig.FieldExtractionCaptureNames())
+	assert.Equal(t, []int{1, 2}, taskConfig.FieldExtractionCaptureIndexes())
+	deduplication := taskConfig.EnabledDeduplication()
+	assert.NotNil(t, deduplication)
+	assert.Equal(t, DefaultDeduplicationWindow, deduplication.Window)
+	assert.Equal(t, DefaultDeduplicationMaxKeys, deduplication.MaxKeys)
+	assert.Equal(t, DefaultDeduplicationMaxTotalKeys, deduplication.MaxTotalKeys)
+
+	custom, err := CreateTaskConfig(map[string]interface{}{
+		"dataid": "999990102",
+		"field_extraction": map[string]interface{}{
+			"pattern": `(?P<traceID>\d+)`,
+			"deduplication": map[string]interface{}{
+				"enabled":        true,
+				"window":         "2s",
+				"max_keys":       16,
+				"max_total_keys": 8,
+			},
+		},
+	})
+	assert.NoError(t, err)
+	deduplication = custom.EnabledDeduplication()
+	assert.Equal(t, 2*time.Second, deduplication.Window)
+	assert.Equal(t, 16, deduplication.MaxKeys)
+	assert.Equal(t, 8, deduplication.MaxTotalKeys)
+}
+
+func TestFieldExtractionParticipatesInFilterAndProcessorIdentity(t *testing.T) {
+	first, err := CreateTaskConfig(map[string]interface{}{
+		"dataid": "999990111",
+		"field_extraction": map[string]interface{}{
+			"pattern":       `trace=(?P<traceID>\d+)`,
+			"deduplication": map[string]interface{}{"enabled": false},
+		},
+	})
+	assert.NoError(t, err)
+
+	second, err := CreateTaskConfig(map[string]interface{}{
+		"dataid": "999990111",
+		"field_extraction": map[string]interface{}{
+			"pattern":       `request=(?P<traceID>\d+)`,
+			"deduplication": map[string]interface{}{"enabled": false},
+		},
+	})
+	assert.NoError(t, err)
+
+	assert.NotEqual(t, first.ID, second.ID)
+	assert.NotEqual(t, first.FilterID, second.FilterID)
+	assert.NotEqual(t, first.ProcessorID, second.ProcessorID)
+	assert.Equal(t, first.InputID, second.InputID)
+}
+
+func TestEnabledDeduplicationUsesTaskScopedProcessorIdentity(t *testing.T) {
+	legacyFirst, err := CreateTaskConfig(map[string]interface{}{"dataid": 999990119})
+	assert.NoError(t, err)
+	legacySecond, err := CreateTaskConfig(map[string]interface{}{"dataid": 999990120})
+	assert.NoError(t, err)
+	assert.Equal(t, legacyFirst.SenderID, legacySecond.SenderID)
+	assert.Equal(t, legacyFirst.ProcessorID, legacySecond.ProcessorID)
+
+	first, err := CreateTaskConfig(map[string]interface{}{
+		"dataid":        999990121,
+		"package_count": 10,
+		"field_extraction": map[string]interface{}{
+			"pattern":       `trace=(?P<traceID>\d+)`,
+			"deduplication": map[string]interface{}{"enabled": true},
+		},
+	})
+	assert.NoError(t, err)
+	second, err := CreateTaskConfig(map[string]interface{}{
+		"dataid":        999990121,
+		"package_count": 20,
+		"field_extraction": map[string]interface{}{
+			"pattern":       `trace=(?P<traceID>\d+)`,
+			"deduplication": map[string]interface{}{"enabled": true},
+		},
+	})
+	assert.NoError(t, err)
+
+	assert.NotEqual(t, first.SenderID, second.SenderID)
+	assert.NotEqual(t, first.ProcessorID, second.ProcessorID)
+	assert.Equal(t, first.FilterID, second.FilterID)
+	assert.Equal(t, first.InputID, second.InputID)
+}
+
+func TestDisabledDeduplicationKeepsExistingProcessorSharing(t *testing.T) {
+	first, err := CreateTaskConfig(map[string]interface{}{
+		"dataid":        999990123,
+		"package_count": 10,
+		"field_extraction": map[string]interface{}{
+			"pattern":       `trace=(?P<traceID>\d+)`,
+			"deduplication": map[string]interface{}{"enabled": false},
+		},
+	})
+	assert.NoError(t, err)
+	second, err := CreateTaskConfig(map[string]interface{}{
+		"dataid":        999990123,
+		"package_count": 20,
+		"field_extraction": map[string]interface{}{
+			"pattern":       `trace=(?P<traceID>\d+)`,
+			"deduplication": map[string]interface{}{"enabled": false},
+		},
+	})
+	assert.NoError(t, err)
+	assert.NotEqual(t, first.SenderID, second.SenderID)
+	assert.Equal(t, first.ProcessorID, second.ProcessorID)
+}
+
+func TestFieldExtractionConfigValidation(t *testing.T) {
+	testCases := []struct {
+		name    string
+		config  map[string]interface{}
+		message string
+	}{
+		{
+			name: "empty pattern",
+			config: map[string]interface{}{
+				"field_extraction": map[string]interface{}{"pattern": ""},
+			},
+			message: "field_extraction.pattern cannot be empty",
+		},
+		{
+			name: "invalid pattern",
+			config: map[string]interface{}{
+				"field_extraction": map[string]interface{}{"pattern": `(?P<traceID>`},
+			},
+			message: "compile field_extraction.pattern",
+		},
+		{
+			name: "no named capture",
+			config: map[string]interface{}{
+				"field_extraction": map[string]interface{}{"pattern": `(\d+)`},
+			},
+			message: "must contain at least one named capture group",
+		},
+		{
+			name: "duplicate capture name",
+			config: map[string]interface{}{
+				"field_extraction": map[string]interface{}{"pattern": `(?P<id>\d+)-(?P<id>\d+)`},
+			},
+			message: "duplicate capture name",
+		},
+		{
+			name: "legacy top-level deduplication",
+			config: map[string]interface{}{
+				"deduplication": map[string]interface{}{},
+			},
+			message: "must be configured under field_extraction",
+		},
+		{
+			name: "dedup enabled is required",
+			config: map[string]interface{}{
+				"field_extraction": map[string]interface{}{
+					"pattern":       `(?P<id>\d+)`,
+					"deduplication": map[string]interface{}{},
+				},
+			},
+			message: "field_extraction.deduplication.enabled is required",
+		},
+		{
+			name: "invalid total limit",
+			config: map[string]interface{}{
+				"field_extraction": map[string]interface{}{
+					"pattern": `(?P<id>\d+)`,
+					"deduplication": map[string]interface{}{
+						"enabled":        true,
+						"max_total_keys": -1,
+					},
+				},
+			},
+			message: "max_total_keys must be greater than zero",
+		},
+	}
+
+	for index, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			testCase.config["dataid"] = 999990200 + index
+			_, err := CreateTaskConfig(testCase.config)
+			assert.ErrorContains(t, err, testCase.message)
+		})
+	}
 }

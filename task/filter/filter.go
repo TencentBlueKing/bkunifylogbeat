@@ -45,6 +45,11 @@ var (
 	filterHandledTotal = bkmonitoring.NewInt("filter_handled_total") // 被处理的总数
 )
 
+type filterBranchEntry struct {
+	processorID string
+	taskConfig  *config.TaskConfig
+}
+
 type Filters struct {
 	*base.Node
 
@@ -52,6 +57,8 @@ type Filters struct {
 	filterMaxIndex int
 
 	taskConfigMaps map[string]*config.TaskConfig
+	branchSnapshot []filterBranchEntry
+	configMutex    sync.RWMutex
 }
 
 // GetFilters get filter
@@ -118,6 +125,9 @@ func RemoveFilter(id string) {
 }
 
 func (f *Filters) MergeFilterConfig(taskCfg *config.TaskConfig) {
+	f.configMutex.Lock()
+	defer f.configMutex.Unlock()
+
 	if taskCfg.HasFilter {
 		for _, filConfig := range taskCfg.Filters {
 			if len(filConfig.Conditions) != 0 {
@@ -128,7 +138,16 @@ func (f *Filters) MergeFilterConfig(taskCfg *config.TaskConfig) {
 			}
 		}
 	}
-	f.taskConfigMaps[taskCfg.ProcessorID] = taskCfg
+	f.OutsLock.RLock()
+	_, outputExists := f.Outs[taskCfg.ProcessorID]
+	f.OutsLock.RUnlock()
+	if _, ok := f.taskConfigMaps[taskCfg.ProcessorID]; !ok || !outputExists {
+		f.taskConfigMaps[taskCfg.ProcessorID] = taskCfg
+	}
+	f.branchSnapshot = make([]filterBranchEntry, 0, len(f.taskConfigMaps))
+	for processorID, taskConfig := range f.taskConfigMaps {
+		f.branchSnapshot = append(f.branchSnapshot, filterBranchEntry{processorID: processorID, taskConfig: taskConfig})
+	}
 }
 
 func (f *Filters) Run() {
@@ -154,10 +173,8 @@ func (f *Filters) Run() {
 func (f *Filters) singleFilter(data *util.Data) {
 	event := &data.Event
 
-	var text string
-	var ok bool
-	text, ok = event.Fields["data"].(string)
-	if !ok || f.Delimiter == "" {
+	text, ok := event.Fields["data"].(string)
+	if !ok {
 		for _, out := range f.GetOuts() {
 			select {
 			case <-f.End:
@@ -170,27 +187,9 @@ func (f *Filters) singleFilter(data *util.Data) {
 		return
 	}
 
-	// index为N时，数组切分最少需要分成N+1段
-	words := strings.SplitN(text, f.Delimiter, f.filterMaxIndex+1)
-	for i := range words {
-		words[i] = strings.TrimSpace(words[i])
-	}
-	for processorID, taskConfig := range f.taskConfigMaps {
-		matched := f.Handle(words, text, taskConfig)
-		if !matched {
-			// update metric
-			{
-				filterDroppedTotal.Add(1)
-				f.ForEachTaskNodeBy(processorID, func(tNode *base.TaskNode) {
-					base.CrawlerDropped.Add(1)
-					tNode.CrawlerDropped.Add(1)
-				})
-			}
-			continue
-		}
-
-		out, ok := f.Outs[processorID]
-		if ok {
+	branches, filterMaxIndex := f.getBranches()
+	if f.Delimiter == "" {
+		for _, out := range f.GetOuts() {
 			select {
 			case <-f.End:
 				logp.L.Infof("node filter(%s) is done", f.ID)
@@ -199,13 +198,44 @@ func (f *Filters) singleFilter(data *util.Data) {
 				filterHandledTotal.Add(1)
 			}
 		}
+		return
+	}
+
+	var words []string
+	if f.Delimiter != "" {
+		// index为N时，数组切分最少需要分成N+1段
+		words = strings.SplitN(text, f.Delimiter, filterMaxIndex+1)
+		for i := range words {
+			words[i] = strings.TrimSpace(words[i])
+		}
+	}
+
+	for _, entry := range branches {
+		processorID := entry.processorID
+		out, ok := f.getOutput(processorID)
+		if !ok {
+			continue
+		}
+		matched := f.Handle(words, text, entry.taskConfig)
+		if !matched {
+			f.recordFilterDropped(processorID, 1)
+			continue
+		}
+
+		select {
+		case <-f.End:
+			logp.L.Infof("node filter(%s) is done", f.ID)
+			return
+		case out <- data:
+			filterHandledTotal.Add(1)
+		}
 	}
 }
 
 // batchFilter 针对多行文本的批量处理
 func (f *Filters) batchFilter(data *util.Data) {
 	texts := data.Event.GetTexts()
-
+	branches, filterMaxIndex := f.getBranches()
 	if f.Delimiter == "" {
 		for _, out := range f.GetOuts() {
 			select {
@@ -219,53 +249,82 @@ func (f *Filters) batchFilter(data *util.Data) {
 		return
 	}
 
-	wordsInTexts := make([][]string, 0, len(texts))
-	for _, text := range texts {
-		wordsInTexts = append(wordsInTexts, strings.SplitN(text, f.Delimiter, f.filterMaxIndex+1))
+	var wordsInTexts [][]string
+	if f.Delimiter != "" {
+		wordsInTexts = make([][]string, 0, len(texts))
+		for _, text := range texts {
+			wordsInTexts = append(wordsInTexts, strings.SplitN(text, f.Delimiter, filterMaxIndex+1))
+		}
 	}
 
-	for processorID, taskConfig := range f.taskConfigMaps {
+	for _, entry := range branches {
+		processorID := entry.processorID
+		out, ok := f.getOutput(processorID)
+		if !ok {
+			continue
+		}
 
 		matchedTexts := make([]string, 0, len(texts))
+		var filterDropped int64
 
-		for idx, words := range wordsInTexts {
-			matched := f.Handle(words, texts[idx], taskConfig)
-			if matched {
-				matchedTexts = append(matchedTexts, texts[idx])
+		for idx := range texts {
+			var words []string
+			if wordsInTexts != nil {
+				words = wordsInTexts[idx]
+			}
+			text := texts[idx]
+			matched := f.Handle(words, text, entry.taskConfig)
+			if !matched {
+				filterDropped++
 				continue
 			}
+			matchedTexts = append(matchedTexts, text)
 		}
 
-		unmatchedCount := int64(len(texts) - len(matchedTexts))
-
-		if unmatchedCount > 0 {
-			// update metric
-			filterDroppedTotal.Add(unmatchedCount)
-			f.ForEachTaskNodeBy(processorID, func(tNode *base.TaskNode) {
-				base.CrawlerDropped.Add(unmatchedCount)
-				tNode.CrawlerDropped.Add(unmatchedCount)
-			})
-		}
+		f.recordFilterDropped(processorID, filterDropped)
 
 		if len(matchedTexts) > 0 {
-			if out, ok := f.Outs[processorID]; ok {
+			// 复制一个新的事件出来，只修改 Texts 字段
+			event := data.GetEvent()
+			event.Texts = matchedTexts
+			taskData := &util.Data{Event: event}
+			taskData.SetState(data.GetState())
 
-				// 复制一个新的事件出来，只修改 Texts 字段
-				event := data.GetEvent()
-				event.Texts = matchedTexts
-				taskData := &util.Data{Event: event}
-				taskData.SetState(data.GetState())
-
-				select {
-				case <-f.End:
-					logp.L.Infof("node filter(%s) is done", f.ID)
-					return
-				case out <- taskData:
-					filterHandledTotal.Add(int64(len(matchedTexts)))
-				}
+			select {
+			case <-f.End:
+				logp.L.Infof("node filter(%s) is done", f.ID)
+				return
+			case out <- taskData:
+				filterHandledTotal.Add(int64(len(matchedTexts)))
 			}
 		}
 	}
+}
+
+func (f *Filters) getBranches() ([]filterBranchEntry, int) {
+	f.configMutex.RLock()
+	defer f.configMutex.RUnlock()
+	return f.branchSnapshot, f.filterMaxIndex
+}
+
+func (f *Filters) getOutput(processorID string) (chan interface{}, bool) {
+	f.OutsLock.RLock()
+	defer f.OutsLock.RUnlock()
+	out, ok := f.Outs[processorID]
+	return out, ok
+}
+
+func (f *Filters) recordFilterDropped(processorID string, count int64) {
+	if count == 0 {
+		return
+	}
+
+	filterDroppedTotal.Add(count)
+
+	f.ForEachTaskNodeBy(processorID, func(tNode *base.TaskNode) {
+		base.CrawlerDropped.Add(count)
+		tNode.CrawlerDropped.Add(count)
+	})
 }
 
 // Handle 过滤数据

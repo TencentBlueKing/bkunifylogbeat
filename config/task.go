@@ -28,8 +28,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
@@ -82,6 +84,64 @@ type FiltersConfig struct {
 	Delimiter string         `config:"delimiter"`
 	Filters   []FilterConfig `config:"filters"`
 	HasFilter bool
+}
+
+const (
+	DefaultDeduplicationWindow       = 5 * time.Second
+	DefaultDeduplicationMaxKeys      = 8192
+	DefaultDeduplicationMaxTotalKeys = 65536
+)
+
+// FieldExtraction defines a regular expression whose named capture groups are
+// serialized into the event data field as a JSON object.
+type FieldExtraction struct {
+	Pattern       string         `config:"pattern"`
+	Deduplication *Deduplication `config:"deduplication"`
+}
+
+// FieldExtractionConfig is kept separate so it can be removed from the input
+// node identity after it has participated in the filter and processor node identities.
+type FieldExtractionConfig struct {
+	FieldExtraction *FieldExtraction `config:"field_extraction"`
+
+	fieldExtractionRegexp         *regexp.Regexp
+	fieldExtractionCaptureNames   []string
+	fieldExtractionCaptureIndexes []int
+}
+
+// Deduplication bounds duplicate suppression for each processing branch. The
+// per-source limit applies to one map generation; MaxTotalKeys bounds all map
+// generations and sources in the branch together.
+type Deduplication struct {
+	Enabled      *bool         `config:"enabled"`
+	Window       time.Duration `config:"window"`
+	MaxKeys      int           `config:"max_keys"`
+	MaxTotalKeys int           `config:"max_total_keys"`
+}
+
+func (c *TaskConfig) FieldExtractionRegexp() *regexp.Regexp {
+	return c.fieldExtractionRegexp
+}
+
+func (c *TaskConfig) FieldExtractionCaptureNames() []string {
+	return c.fieldExtractionCaptureNames
+}
+
+func (c *TaskConfig) FieldExtractionCaptureIndexes() []int {
+	return c.fieldExtractionCaptureIndexes
+}
+
+// EnabledDeduplication returns the validated deduplication configuration only
+// when duplicate suppression is explicitly enabled.
+func (c *TaskConfig) EnabledDeduplication() *Deduplication {
+	if c.FieldExtraction == nil || c.FieldExtraction.Deduplication == nil {
+		return nil
+	}
+	deduplication := c.FieldExtraction.Deduplication
+	if deduplication.Enabled == nil || !*deduplication.Enabled {
+		return nil
+	}
+	return deduplication
 }
 
 type SenderConfig struct {
@@ -159,10 +219,11 @@ type TaskConfig struct {
 	DataID int      `config:"dataid"`
 	Paths  []string `config:"paths"`
 
-	ProcessorConfig `config:",inline"`
-	FiltersConfig   `config:",inline"`
-	SenderConfig    `config:",inline"`
-	MountConfig     `config:",inline"`
+	ProcessorConfig       `config:",inline"`
+	FiltersConfig         `config:",inline"`
+	FieldExtractionConfig `config:",inline"`
+	SenderConfig          `config:",inline"`
+	MountConfig           `config:",inline"`
 
 	ext map[string]interface{}
 
@@ -186,6 +247,10 @@ func (c *TaskConfig) GetExtMeta() map[string]interface{} {
 
 // NewTaskConfig 创建采集任务配置
 func NewTaskConfig(beatConfig Config, rawConfig *beat.Config) (*TaskConfig, error) {
+	if rawConfig.HasField("deduplication") {
+		return nil, fmt.Errorf("deduplication must be configured under field_extraction")
+	}
+
 	config := &TaskConfig{
 		Type:   "log",
 		DataID: 0,
@@ -206,6 +271,10 @@ func NewTaskConfig(beatConfig Config, rawConfig *beat.Config) (*TaskConfig, erro
 	}
 	if config.DataID == 0 {
 		return nil, fmt.Errorf("error creating task, DataID cannot be empty")
+	}
+
+	if err := config.initFieldExtractionAndDeduplication(); err != nil {
+		return nil, err
 	}
 
 	config.RawConfig, err = initTaskConfig(config.Type, rawConfig)
@@ -284,22 +353,96 @@ func initIDWithConfig(config *TaskConfig) {
 	)
 	copyConfig, _ = common.NewConfigFrom(config.RawConfig)
 
-	RemoveFields(copyConfig, map[string]interface{}{"dataid": config.DataID})
+	// Enabled deduplication state belongs to one complete task configuration.
+	// Sender keeps dataid and Processor uses TaskID, while Filter and Input remain
+	// shareable. Extraction-only and disabled deduplication retain legacy sharing.
+	isolateDeduplication := config.EnabledDeduplication() != nil
+	if !isolateDeduplication {
+		RemoveFields(copyConfig, map[string]interface{}{"dataid": config.DataID})
+	}
 	_, hashVal = utils.HashRawConfig(copyConfig)
 	config.SenderID = fmt.Sprintf("sender-%s", hashVal)
 
 	RemoveFields(copyConfig, config.SenderConfig)
 	_, hashVal = utils.HashRawConfig(copyConfig)
 	config.ProcessorID = fmt.Sprintf("processor-%s", hashVal)
+	if isolateDeduplication {
+		config.ProcessorID = fmt.Sprintf("processor-task-%s", config.ID)
+	}
 
 	RemoveFields(copyConfig, config.ProcessorConfig)
 	RemoveFields(copyConfig, map[string]interface{}{"filters": config.Filters})
+	if isolateDeduplication {
+		RemoveFields(copyConfig, map[string]interface{}{"dataid": config.DataID})
+	}
 	_, hashVal = utils.HashRawConfig(copyConfig)
 	config.FilterID = fmt.Sprintf("filter-%s", hashVal)
 
 	RemoveFields(copyConfig, config.FiltersConfig)
+	RemoveFields(copyConfig, config.FieldExtractionConfig)
 	_, hashVal = utils.HashRawConfig(copyConfig)
 	config.InputID = fmt.Sprintf("input-%s", hashVal)
+}
+
+func (c *TaskConfig) initFieldExtractionAndDeduplication() error {
+	if c.FieldExtraction != nil {
+		if c.FieldExtraction.Pattern == "" {
+			return fmt.Errorf("field_extraction.pattern cannot be empty")
+		}
+
+		re, err := regexp.Compile(c.FieldExtraction.Pattern)
+		if err != nil {
+			return fmt.Errorf("compile field_extraction.pattern: %w", err)
+		}
+
+		seenNames := make(map[string]struct{})
+		for index, name := range re.SubexpNames() {
+			if index == 0 || name == "" {
+				continue
+			}
+			if _, ok := seenNames[name]; ok {
+				return fmt.Errorf("field_extraction.pattern contains duplicate capture name %q", name)
+			}
+			seenNames[name] = struct{}{}
+			c.fieldExtractionCaptureNames = append(c.fieldExtractionCaptureNames, name)
+			c.fieldExtractionCaptureIndexes = append(c.fieldExtractionCaptureIndexes, index)
+		}
+		if len(c.fieldExtractionCaptureNames) == 0 {
+			return fmt.Errorf("field_extraction.pattern must contain at least one named capture group")
+		}
+		c.fieldExtractionRegexp = re
+	}
+
+	if c.FieldExtraction == nil || c.FieldExtraction.Deduplication == nil {
+		return nil
+	}
+	deduplication := c.FieldExtraction.Deduplication
+	if deduplication.Enabled == nil {
+		return fmt.Errorf("field_extraction.deduplication.enabled is required")
+	}
+	if !*deduplication.Enabled {
+		return nil
+	}
+
+	if deduplication.Window == 0 {
+		deduplication.Window = DefaultDeduplicationWindow
+	}
+	if deduplication.MaxKeys == 0 {
+		deduplication.MaxKeys = DefaultDeduplicationMaxKeys
+	}
+	if deduplication.MaxTotalKeys == 0 {
+		deduplication.MaxTotalKeys = DefaultDeduplicationMaxTotalKeys
+	}
+	if deduplication.Window <= 0 {
+		return fmt.Errorf("field_extraction.deduplication.window must be greater than zero")
+	}
+	if deduplication.MaxKeys < 1 {
+		return fmt.Errorf("field_extraction.deduplication.max_keys must be greater than zero")
+	}
+	if deduplication.MaxTotalKeys < 1 {
+		return fmt.Errorf("field_extraction.deduplication.max_total_keys must be greater than zero")
+	}
+	return nil
 }
 
 func RemoveFields(config *common.Config, from interface{}) {
