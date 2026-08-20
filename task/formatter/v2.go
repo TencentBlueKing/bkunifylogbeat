@@ -79,10 +79,10 @@ func (f v2Formatter) Format(events []*util.Data) beat.MapStr {
 	} else {
 		var items []beat.MapStr
 		for index, event := range events {
-			if event.Event.Fields == nil {
+			item := event.Event.Fields.Clone()
+			if item == nil {
 				continue
 			}
-			item := event.Event.Fields.Clone()
 			item["iterationindex"] = index
 			items = append(items, item)
 		}

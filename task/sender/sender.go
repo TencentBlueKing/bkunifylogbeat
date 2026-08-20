@@ -176,10 +176,8 @@ func (send *Sender) Run() {
 
 		case e := <-send.In:
 			event := e.(*util.Data)
-			// State-only events advance the registrar but are not business lines.
-			// Event.Count returns one when Fields and Texts are both empty, so only
-			// update normal send metrics for events that carry actual data.
-			if event.Event.Fields != nil || event.Event.HasTexts() {
+			// update metric
+			{
 				beatEvent := event.GetEvent()
 				eventCount := int64(beatEvent.Count())
 				base.CrawlerSendTotal.Add(eventCount)
@@ -203,47 +201,16 @@ func (send *Sender) String() string {
 	return fmt.Sprintf("Sender-SenderID-%s", send.ID)
 }
 
-func isStateOnlyEvent(event *util.Data) bool {
-	return event.Event.Fields == nil && !event.Event.HasTexts()
-}
-
 func (send *Sender) cacheSend(event *util.Data) error {
 	source := event.GetState().Source
-	buffer, exist := send.cache[source]
-
-	// Transform drops can be frequent, especially when deduplication is enabled.
-	// Keep only the newest trailing state for each source and let the regular
-	// ticker flush it. This preserves the latest registrar offset without
-	// turning every dropped line into an empty publisher event or breaking
-	// package_count batching.
-	if isStateOnlyEvent(event) {
-		if exist && len(buffer) > 0 && isStateOnlyEvent(buffer[len(buffer)-1]) {
-			buffer[len(buffer)-1] = event
-		} else {
-			buffer = append(buffer, event)
-		}
-		send.cache[source] = buffer
-		return nil
-	}
-
-	// A later business event carries a newer state and supersedes a trailing
-	// state-only marker that has not been flushed yet.
-	if exist && len(buffer) > 0 && isStateOnlyEvent(buffer[len(buffer)-1]) {
-		buffer = buffer[:len(buffer)-1]
-		if len(buffer) == 0 {
-			delete(send.cache, source)
-			exist = false
-		} else {
-			send.cache[source] = buffer
-		}
-	}
 
 	if !send.sendConfig.CanPackage {
 		send.send([]*util.Data{event})
 		return nil
 	}
 
-	// 极速模式批量事件直接发送。
+	buffer, exist := send.cache[source]
+	// 特殊事件直接发送
 	if event.Event.Fields == nil {
 		if exist {
 			buffer = append(buffer, event)
