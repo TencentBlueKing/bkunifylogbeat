@@ -58,7 +58,7 @@ func TestProcessorRunsTransformBeforeLibbeatProcessors(t *testing.T) {
 		{
 			"drop_event": map[string]interface{}{
 				"when": map[string]interface{}{
-					"equals": map[string]interface{}{"data": `{"traceID":"123","proc":"worker"}`},
+					"equals": map[string]interface{}{"data": `{"proc":"worker","traceID":"123"}`},
 				},
 			},
 		},
@@ -73,7 +73,7 @@ func TestProcessorRunsTransformBeforeLibbeatProcessors(t *testing.T) {
 
 	kept := p.process(tests.MockLogEvent("/logs/a.log", "trace=124;proc=worker"))
 	require.NotNil(t, kept)
-	assert.Equal(t, `{"traceID":"124","proc":"worker"}`, kept.Event.Fields["data"])
+	assert.JSONEq(t, `{"traceID":"124","proc":"worker"}`, kept.Event.Fields["data"].(string))
 }
 
 func TestProcessorRecordsTransformMetricsAndDoesNotMutateInput(t *testing.T) {
@@ -137,8 +137,8 @@ func TestProcessorTransformsBatchWithNilFields(t *testing.T) {
 	processed := p.process(data)
 	require.NotNil(t, processed)
 	assert.Equal(t, []string{
-		`{"traceID":"1","proc":"a"}`,
-		`{"traceID":"2","proc":"b"}`,
+		`{"proc":"a","traceID":"1"}`,
+		`{"proc":"b","traceID":"2"}`,
 	}, processed.Event.Texts)
 	assert.EqualValues(t, 1, taskNode.ExtractFailed.Get())
 	assert.EqualValues(t, 1, taskNode.DedupDropped.Get())
@@ -177,7 +177,7 @@ func TestProcessorOutputFeedsV2FormatterItemsData(t *testing.T) {
 	formatted := v2.Format([]*util.Data{processed})
 	items := formatted["items"].([]beat.MapStr)
 	require.Len(t, items, 1)
-	assert.Equal(t, `{"traceID":"123","proc":"worker"}`, items[0]["data"])
+	assert.JSONEq(t, `{"traceID":"123","proc":"worker"}`, items[0]["data"].(string))
 }
 
 func TestProcessorPassesStateEventThroughTransformPipeline(t *testing.T) {

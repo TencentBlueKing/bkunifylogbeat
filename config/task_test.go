@@ -111,6 +111,15 @@ foobar
 }
 
 func TestFieldExtractionAndDeduplicationConfig(t *testing.T) {
+	withoutDeduplication, err := CreateTaskConfig(map[string]interface{}{
+		"dataid": 999990100,
+		"field_extraction": map[string]interface{}{
+			"pattern": `(?P<traceID>\d+)`,
+		},
+	})
+	assert.NoError(t, err)
+	assert.Nil(t, withoutDeduplication.EnabledDeduplication())
+
 	vars := map[string]interface{}{
 		"dataid": "999990101",
 		"field_extraction": map[string]interface{}{
@@ -122,7 +131,6 @@ func TestFieldExtractionAndDeduplicationConfig(t *testing.T) {
 	taskConfig, err := CreateTaskConfig(vars)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"traceID", "proc"}, taskConfig.FieldExtractionCaptureNames())
-	assert.Equal(t, []int{1, 2}, taskConfig.FieldExtractionCaptureIndexes())
 	deduplication := taskConfig.EnabledDeduplication()
 	assert.NotNil(t, deduplication)
 	assert.Equal(t, DefaultDeduplicationWindow, deduplication.Window)
@@ -260,11 +268,18 @@ func TestFieldExtractionConfigValidation(t *testing.T) {
 			message: "compile field_extraction.pattern",
 		},
 		{
-			name: "no named capture",
+			name: "anonymous capture",
 			config: map[string]interface{}{
 				"field_extraction": map[string]interface{}{"pattern": `(\d+)`},
 			},
-			message: "must contain at least one named capture group",
+			message: "requires every capture group to be named",
+		},
+		{
+			name: "mixed named and anonymous captures",
+			config: map[string]interface{}{
+				"field_extraction": map[string]interface{}{"pattern": `(?P<id>\d+)-(\d+)`},
+			},
+			message: "requires every capture group to be named",
 		},
 		{
 			name: "duplicate capture name",
@@ -272,13 +287,6 @@ func TestFieldExtractionConfigValidation(t *testing.T) {
 				"field_extraction": map[string]interface{}{"pattern": `(?P<id>\d+)-(?P<id>\d+)`},
 			},
 			message: "duplicate capture name",
-		},
-		{
-			name: "legacy top-level deduplication",
-			config: map[string]interface{}{
-				"deduplication": map[string]interface{}{},
-			},
-			message: "must be configured under field_extraction",
 		},
 		{
 			name: "dedup enabled is required",

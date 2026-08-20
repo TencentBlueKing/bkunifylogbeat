@@ -9,7 +9,6 @@ package transform
 import (
 	stdjson "encoding/json"
 	"fmt"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -45,7 +44,7 @@ func newPipeline(t testing.TB, dataID int, pattern string, deduplicate bool) *Pi
 	return NewPipeline(taskConfig)
 }
 
-func TestPipelineProjectsOrderedJSONWithoutMutatingInput(t *testing.T) {
+func TestPipelineProjectsJSONWithoutMutatingInput(t *testing.T) {
 	pipeline := newPipeline(t, 999991001, `trace=(?P<traceID>[^;]+);proc=(?P<ProcName>.+)`, false)
 	data := tests.MockLogEvent("/logs/proc-a.log", `trace=12"34;proc=a\\b`)
 	data.Event.Fields["untouched"] = "value"
@@ -54,7 +53,7 @@ func TestPipelineProjectsOrderedJSONWithoutMutatingInput(t *testing.T) {
 	require.NotNil(t, outcome.Data)
 	assert.NotSame(t, data, outcome.Data)
 	assert.Equal(t, `trace=12"34;proc=a\\b`, data.Event.Fields["data"])
-	assert.Equal(t, `{"traceID":"12\"34","ProcName":"a\\\\b"}`, outcome.Data.Event.Fields["data"])
+	assert.JSONEq(t, `{"traceID":"12\"34","ProcName":"a\\\\b"}`, outcome.Data.Event.Fields["data"].(string))
 	assert.Equal(t, "value", outcome.Data.Event.Fields["untouched"])
 	assert.Equal(t, data.GetState().Source, outcome.Data.GetState().Source)
 }
@@ -106,41 +105,11 @@ func TestPipelineTransformsBatchAndCountsEachDroppedLine(t *testing.T) {
 	assert.EqualValues(t, 1, outcome.DedupDropped)
 }
 
-func TestDigitCaptureFastPathMatchesRegexp(t *testing.T) {
-	testCases := []struct {
-		pattern string
-		texts   []string
-	}{
-		{pattern: `(?P<id>\d+)`, texts: []string{"abc123def", "abc", "12x34"}},
-		{pattern: `trace=(?P<id>\d+)`, texts: []string{"x trace=123 y", "trace=x", "trace=1 trace=2"}},
-		{pattern: `^trace=(?P<id>\d+)`, texts: []string{"trace=123", "xtrace=123", "trace=123x"}},
-	}
-	for _, testCase := range testCases {
-		re := regexp.MustCompile(testCase.pattern)
-		fast := newDigitCaptureExtractor(testCase.pattern, "id")
-		require.NotNil(t, fast, testCase.pattern)
-		for _, text := range testCase.texts {
-			matches := re.FindStringSubmatch(text)
-			wantOK := matches != nil
-			want := ""
-			if wantOK {
-				want = matches[1]
-			}
-			got, gotOK := fast.extract(text)
-			assert.Equal(t, wantOK, gotOK, "pattern=%s text=%s", testCase.pattern, text)
-			assert.Equal(t, want, got, "pattern=%s text=%s", testCase.pattern, text)
-		}
-	}
-	assert.Nil(t, newDigitCaptureExtractor(`^trace=(?P<id>\d+)$`, "id"))
-	assert.Nil(t, newDigitCaptureExtractor(`x(?P<id>\d+)2`, "id"))
-}
-
-func TestOrderedFieldValuesAlwaysProducesValidJSON(t *testing.T) {
-	data, err := orderedFieldValues{
-		names:  []string{"control", "invalid"},
-		values: []string{"line\x00\n\tend", string([]byte{'a', 0xff, 'b'})},
-	}.MarshalJSON()
-	require.NoError(t, err)
+func TestPipelineAlwaysProducesValidJSON(t *testing.T) {
+	pipeline := newPipeline(t, 999991006, `control=(?P<control>[^;]+);invalid=(?P<invalid>.+)`, false)
+	outcome := pipeline.Apply(tests.MockLogEvent("/logs/proc-a.log", "control=line\x00\n\tend;invalid="+string([]byte{'a', 0xff, 'b'})))
+	require.NotNil(t, outcome.Data)
+	data := []byte(outcome.Data.Event.Fields["data"].(string))
 	require.True(t, stdjson.Valid(data), string(data))
 	decoded := make(map[string]string)
 	require.NoError(t, stdjson.Unmarshal(data, &decoded))
@@ -155,7 +124,7 @@ func TestExtractionFailsWhenNamedCaptureDidNotParticipate(t *testing.T) {
 	assert.EqualValues(t, 1, failed.ExtractFailed)
 	kept := pipeline.Apply(tests.MockLogEvent("/logs/proc-a.log", "123-worker"))
 	require.NotNil(t, kept.Data)
-	assert.Equal(t, `{"traceID":"123","proc":"worker"}`, kept.Data.Event.Fields["data"])
+	assert.JSONEq(t, `{"traceID":"123","proc":"worker"}`, kept.Data.Event.Fields["data"].(string))
 }
 
 func TestWindowDeduperRetainsPreviousGenerationAndReportsCapacityEviction(t *testing.T) {

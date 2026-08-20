@@ -23,11 +23,9 @@ package transform
 import (
 	"encoding/binary"
 	"regexp"
-	"regexp/syntax"
-	"strings"
 	"time"
-	"unicode/utf8"
 
+	"github.com/bytedance/sonic"
 	"github.com/cespare/xxhash/v2"
 	"github.com/elastic/beats/filebeat/util"
 
@@ -52,11 +50,12 @@ type Outcome struct {
 	FailOpen      int64
 }
 
-// Pipeline applies field extraction, ordered JSON projection, and optional
+// Pipeline applies field extraction, JSON projection, and optional
 // bounded-window deduplication before libbeat processors run.
 type Pipeline struct {
 	extractor *fieldExtractor
 	values    []string
+	fields    map[string]string
 	deduper   *windowDeduper
 }
 
@@ -70,6 +69,7 @@ func NewPipeline(taskConfig *config.TaskConfig) *Pipeline {
 	pipeline := &Pipeline{
 		extractor: extractor,
 		values:    make([]string, len(extractor.names)),
+		fields:    make(map[string]string, len(extractor.names)),
 	}
 	if deduplication := taskConfig.EnabledDeduplication(); deduplication != nil {
 		pipeline.deduper = newWindowDeduper(deduplication)
@@ -151,129 +151,35 @@ func (p *Pipeline) transform(source, text string) (string, result, dedupStats) {
 		}
 	}
 
-	data, err := orderedFieldValues{names: p.extractor.names, values: p.values}.MarshalJSON()
+	for index, name := range p.extractor.names {
+		p.fields[name] = p.values[index]
+	}
+	data, err := sonic.ConfigStd.MarshalToString(p.fields)
 	if err != nil {
 		return "", extractFailed, stats
 	}
-	return string(data), kept, stats
-}
-
-// orderedFieldValues emits an object in capture-group order without allocating
-// a map for every input line.
-type orderedFieldValues struct {
-	names  []string
-	values []string
-}
-
-func (f orderedFieldValues) MarshalJSON() ([]byte, error) {
-	capacity := 2
-	for index := range f.names {
-		capacity += len(f.names[index]) + len(f.values[index]) + 6
-	}
-
-	data := make([]byte, 0, capacity)
-	data = append(data, '{')
-	for index := range f.names {
-		if index > 0 {
-			data = append(data, ',')
-		}
-		data = appendJSONString(data, f.names[index])
-		data = append(data, ':')
-		data = appendJSONString(data, f.values[index])
-	}
-	data = append(data, '}')
-	return data, nil
-}
-
-func appendJSONString(data []byte, value string) []byte {
-	const hex = "0123456789abcdef"
-
-	data = append(data, '"')
-	start := 0
-	for index := 0; index < len(value); {
-		character := value[index]
-		if character >= utf8.RuneSelf {
-			_, size := utf8.DecodeRuneInString(value[index:])
-			if size > 1 {
-				index += size
-				continue
-			}
-			data = append(data, value[start:index]...)
-			data = append(data, `\ufffd`...)
-			index++
-			start = index
-			continue
-		}
-
-		var escaped byte
-		switch character {
-		case '\\', '"':
-			escaped = character
-		case '\b':
-			escaped = 'b'
-		case '\f':
-			escaped = 'f'
-		case '\n':
-			escaped = 'n'
-		case '\r':
-			escaped = 'r'
-		case '\t':
-			escaped = 't'
-		default:
-			if character >= 0x20 {
-				index++
-				continue
-			}
-		}
-
-		data = append(data, value[start:index]...)
-		if escaped != 0 {
-			data = append(data, '\\', escaped)
-		} else {
-			data = append(data, '\\', 'u', '0', '0', hex[character>>4], hex[character&0x0f])
-		}
-		index++
-		start = index
-	}
-	data = append(data, value[start:]...)
-	data = append(data, '"')
-	return data
+	return data, kept, stats
 }
 
 type fieldExtractor struct {
-	re             *regexp.Regexp
-	names          []string
-	captureIndexes []int
-	fastDigits     *digitCaptureExtractor
+	re    *regexp.Regexp
+	names []string
 }
 
 func newFieldExtractor(taskConfig *config.TaskConfig) *fieldExtractor {
-	extractor := &fieldExtractor{
-		re:             taskConfig.FieldExtractionRegexp(),
-		names:          taskConfig.FieldExtractionCaptureNames(),
-		captureIndexes: taskConfig.FieldExtractionCaptureIndexes(),
+	return &fieldExtractor{
+		re:    taskConfig.FieldExtractionRegexp(),
+		names: taskConfig.FieldExtractionCaptureNames(),
 	}
-	if len(extractor.names) == 1 && extractor.re.NumSubexp() == 1 {
-		extractor.fastDigits = newDigitCaptureExtractor(taskConfig.FieldExtraction.Pattern, extractor.names[0])
-	}
-	return extractor
 }
 
 func (e *fieldExtractor) extract(text string, values []string) bool {
-	if e.fastDigits != nil {
-		value, ok := e.fastDigits.extract(text)
-		if !ok {
-			return false
-		}
-		values[0] = value
-		return true
-	}
-
 	indexes := e.re.FindStringSubmatchIndex(text)
 	if indexes == nil {
 		return false
 	}
-	for outputIndex, captureIndex := range e.captureIndexes {
+	for outputIndex := range e.names {
+		captureIndex := outputIndex + 1
 		start := indexes[captureIndex*2]
 		end := indexes[captureIndex*2+1]
 		if start < 0 || end < 0 {
@@ -282,112 +188,6 @@ func (e *fieldExtractor) extract(text string, values []string) bool {
 		values[outputIndex] = text[start:end]
 	}
 	return true
-}
-
-// digitCaptureExtractor recognizes the hot DFM shape: an optional literal
-// prefix followed by one named [0-9]+ capture. Other regular expressions keep
-// the general RE2 path above so the optimization cannot change their meaning.
-type digitCaptureExtractor struct {
-	prefix   string
-	anchored bool
-}
-
-func newDigitCaptureExtractor(pattern, captureName string) *digitCaptureExtractor {
-	expression, err := syntax.Parse(pattern, syntax.Perl)
-	if err != nil {
-		return nil
-	}
-
-	parts := []*syntax.Regexp{expression}
-	if expression.Op == syntax.OpConcat {
-		parts = expression.Sub
-	}
-
-	extractor := &digitCaptureExtractor{}
-	foundCapture := false
-	for index, part := range parts {
-		switch part.Op {
-		case syntax.OpBeginText:
-			if index != 0 {
-				return nil
-			}
-			extractor.anchored = true
-		case syntax.OpEndText:
-			return nil
-		case syntax.OpLiteral:
-			if part.Flags&syntax.FoldCase != 0 {
-				return nil
-			}
-			if foundCapture {
-				return nil
-			} else {
-				extractor.prefix += string(part.Rune)
-			}
-		case syntax.OpCapture:
-			if foundCapture || part.Name != captureName || !isASCIIDigitPlus(part) {
-				return nil
-			}
-			foundCapture = true
-		default:
-			return nil
-		}
-	}
-	if !foundCapture {
-		return nil
-	}
-	return extractor
-}
-
-func isASCIIDigitPlus(capture *syntax.Regexp) bool {
-	if len(capture.Sub) != 1 || capture.Sub[0].Op != syntax.OpPlus || len(capture.Sub[0].Sub) != 1 {
-		return false
-	}
-	class := capture.Sub[0].Sub[0]
-	return class.Op == syntax.OpCharClass && len(class.Rune) == 2 && class.Rune[0] == '0' && class.Rune[1] == '9'
-}
-
-func (e *digitCaptureExtractor) extract(text string) (string, bool) {
-	searchFrom := 0
-	for searchFrom <= len(text) {
-		matchStart := searchFrom
-		captureStart := searchFrom
-		if e.prefix != "" {
-			relative := strings.Index(text[searchFrom:], e.prefix)
-			if relative < 0 {
-				return "", false
-			}
-			matchStart = searchFrom + relative
-			if e.anchored && matchStart != 0 {
-				return "", false
-			}
-			captureStart = matchStart + len(e.prefix)
-		} else if e.anchored {
-			if searchFrom != 0 {
-				return "", false
-			}
-			captureStart = 0
-		} else {
-			for captureStart < len(text) && (text[captureStart] < '0' || text[captureStart] > '9') {
-				captureStart++
-			}
-			matchStart = captureStart
-		}
-
-		captureEnd := captureStart
-		for captureEnd < len(text) && text[captureEnd] >= '0' && text[captureEnd] <= '9' {
-			captureEnd++
-		}
-		if captureEnd == captureStart {
-			if e.anchored || matchStart >= len(text) {
-				return "", false
-			}
-			searchFrom = matchStart + 1
-			continue
-		}
-
-		return text[captureStart:captureEnd], true
-	}
-	return "", false
 }
 
 type sourceWindow struct {

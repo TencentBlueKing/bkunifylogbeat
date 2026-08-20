@@ -104,9 +104,8 @@ type FieldExtraction struct {
 type FieldExtractionConfig struct {
 	FieldExtraction *FieldExtraction `config:"field_extraction"`
 
-	fieldExtractionRegexp         *regexp.Regexp
-	fieldExtractionCaptureNames   []string
-	fieldExtractionCaptureIndexes []int
+	fieldExtractionRegexp       *regexp.Regexp
+	fieldExtractionCaptureNames []string
 }
 
 // Deduplication bounds duplicate suppression for each processing branch. The
@@ -125,10 +124,6 @@ func (c *TaskConfig) FieldExtractionRegexp() *regexp.Regexp {
 
 func (c *TaskConfig) FieldExtractionCaptureNames() []string {
 	return c.fieldExtractionCaptureNames
-}
-
-func (c *TaskConfig) FieldExtractionCaptureIndexes() []int {
-	return c.fieldExtractionCaptureIndexes
 }
 
 // EnabledDeduplication returns the validated deduplication configuration only
@@ -247,10 +242,6 @@ func (c *TaskConfig) GetExtMeta() map[string]interface{} {
 
 // NewTaskConfig 创建采集任务配置
 func NewTaskConfig(beatConfig Config, rawConfig *beat.Config) (*TaskConfig, error) {
-	if rawConfig.HasField("deduplication") {
-		return nil, fmt.Errorf("deduplication must be configured under field_extraction")
-	}
-
 	config := &TaskConfig{
 		Type:   "log",
 		DataID: 0,
@@ -400,15 +391,17 @@ func (c *TaskConfig) initFieldExtractionAndDeduplication() error {
 
 		seenNames := make(map[string]struct{})
 		for index, name := range re.SubexpNames() {
-			if index == 0 || name == "" {
+			if index == 0 {
 				continue
+			}
+			if name == "" {
+				return fmt.Errorf("field_extraction.pattern requires every capture group to be named")
 			}
 			if _, ok := seenNames[name]; ok {
 				return fmt.Errorf("field_extraction.pattern contains duplicate capture name %q", name)
 			}
 			seenNames[name] = struct{}{}
 			c.fieldExtractionCaptureNames = append(c.fieldExtractionCaptureNames, name)
-			c.fieldExtractionCaptureIndexes = append(c.fieldExtractionCaptureIndexes, index)
 		}
 		if len(c.fieldExtractionCaptureNames) == 0 {
 			return fmt.Errorf("field_extraction.pattern must contain at least one named capture group")
