@@ -180,9 +180,13 @@ func (p *Processors) process(data *util.Data) *util.Data {
 		outcome := p.transformer.Apply(data)
 		p.recordTransformOutcome(outcome)
 		if outcome.Data == nil {
-			// A later kept event advances the file state. An all-dropped tail can
-			// replay after an input reload or process restart, which is preferable
-			// to a separate ACK path.
+			if outcome.DedupDropped > 0 {
+				// Advance the persisted offset immediately when deduplication removes
+				// the whole event, without turning extraction failures into state events.
+				stateData := util.NewData()
+				stateData.SetState(data.GetState())
+				return stateData
+			}
 			return nil
 		}
 		taskData = outcome.Data

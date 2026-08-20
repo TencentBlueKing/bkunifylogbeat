@@ -91,8 +91,12 @@ func TestProcessorRecordsTransformMetricsAndDoesNotMutateInput(t *testing.T) {
 	require.NotNil(t, kept)
 	assert.NotSame(t, input, kept)
 	assert.Equal(t, "trace=123;proc=worker", input.Event.Fields["data"])
-	duplicate := p.process(tests.MockLogEvent("/logs/a.log", "trace=123;proc=worker"))
-	assert.Nil(t, duplicate)
+	duplicateInput := tests.MockLogEvent("/logs/a.log", "trace=123;proc=worker")
+	duplicate := p.process(duplicateInput)
+	require.NotNil(t, duplicate)
+	assert.Nil(t, duplicate.Event.Fields)
+	assert.False(t, duplicate.Event.HasTexts())
+	assert.Equal(t, duplicateInput.GetState(), duplicate.GetState())
 
 	assert.Equal(t, extractBefore+1, taskNode.ExtractFailed.Get())
 	assert.Equal(t, dedupBefore+1, taskNode.DedupDropped.Get())
@@ -117,8 +121,10 @@ func TestProcessorDedupStateIsIsolatedByTaskConfigWithinSameDataID(t *testing.T)
 	require.NotNil(t, second.process(tests.MockLogEvent("/logs/a.log", line)))
 	firstDuplicate := first.process(tests.MockLogEvent("/logs/a.log", line))
 	secondDuplicate := second.process(tests.MockLogEvent("/logs/a.log", line))
-	assert.Nil(t, firstDuplicate)
-	assert.Nil(t, secondDuplicate)
+	require.NotNil(t, firstDuplicate)
+	require.NotNil(t, secondDuplicate)
+	assert.Nil(t, firstDuplicate.Event.Fields)
+	assert.Nil(t, secondDuplicate.Event.Fields)
 }
 
 func TestProcessorTransformsBatchWithNilFields(t *testing.T) {
@@ -183,7 +189,7 @@ func TestProcessorPassesStateEventThroughTransformPipeline(t *testing.T) {
 	assert.Same(t, state, p.process(state))
 }
 
-func TestProcessorDropsWholeBatchWithoutSyntheticState(t *testing.T) {
+func TestProcessorDropsExtractionOnlyWholeBatchWithoutSyntheticState(t *testing.T) {
 	taskConfig, err := config.CreateTaskConfig(processorTaskConfig(999992008, true))
 	require.NoError(t, err)
 	p, _ := newDirectProcessor(t, taskConfig)
@@ -192,6 +198,26 @@ func TestProcessorDropsWholeBatchWithoutSyntheticState(t *testing.T) {
 
 	processed := p.process(data)
 	assert.Nil(t, processed)
+}
+
+func TestProcessorReturnsStateOnlyWhenDedupDropsWholeBatch(t *testing.T) {
+	taskConfig, err := config.CreateTaskConfig(processorTaskConfig(999992009, true))
+	require.NoError(t, err)
+	p, _ := newDirectProcessor(t, taskConfig)
+	require.NotNil(t, p.process(tests.MockLogEvent("/logs/a.log", "trace=1;proc=a")))
+	require.NotNil(t, p.process(tests.MockLogEvent("/logs/a.log", "trace=2;proc=b")))
+
+	data := tests.MockLogEvent("/logs/a.log", "")
+	state := data.GetState()
+	state.Offset = 99
+	data.SetState(state)
+	data.Event.Texts = []string{"trace=1;proc=a", "invalid", "trace=2;proc=b"}
+
+	processed := p.process(data)
+	require.NotNil(t, processed)
+	assert.Nil(t, processed.Event.Fields)
+	assert.False(t, processed.Event.HasTexts())
+	assert.Equal(t, data.GetState(), processed.GetState())
 }
 
 func BenchmarkProcessorDataPath(b *testing.B) {
@@ -264,8 +290,9 @@ func BenchmarkProcessorDataPath(b *testing.B) {
 		b.ReportAllocs()
 		b.SetBytes(int64(len(line)))
 		for i := 0; i < b.N; i++ {
-			if p.process(data) != nil {
-				b.Fatal("duplicate event was not dropped")
+			processed := p.process(data)
+			if processed == nil || processed.Event.Fields != nil || processed.Event.HasTexts() {
+				b.Fatal("duplicate event did not become state-only")
 			}
 		}
 	})
