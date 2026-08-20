@@ -181,7 +181,7 @@ func TestFieldExtractionParticipatesInFilterAndProcessorIdentity(t *testing.T) {
 	assert.Equal(t, first.InputID, second.InputID)
 }
 
-func TestEnabledDeduplicationUsesTaskScopedProcessorIdentity(t *testing.T) {
+func TestEnabledDeduplicationUsesTaskScopedFilterAndProcessorIdentity(t *testing.T) {
 	legacyFirst, err := CreateTaskConfig(map[string]interface{}{"dataid": 999990119})
 	assert.NoError(t, err)
 	legacySecond, err := CreateTaskConfig(map[string]interface{}{"dataid": 999990120})
@@ -210,7 +210,7 @@ func TestEnabledDeduplicationUsesTaskScopedProcessorIdentity(t *testing.T) {
 
 	assert.NotEqual(t, first.SenderID, second.SenderID)
 	assert.NotEqual(t, first.ProcessorID, second.ProcessorID)
-	assert.Equal(t, first.FilterID, second.FilterID)
+	assert.NotEqual(t, first.FilterID, second.FilterID)
 	assert.Equal(t, first.InputID, second.InputID)
 }
 
@@ -235,6 +235,7 @@ func TestDisabledDeduplicationKeepsExistingProcessorSharing(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotEqual(t, first.SenderID, second.SenderID)
 	assert.Equal(t, first.ProcessorID, second.ProcessorID)
+	assert.Equal(t, first.FilterID, second.FilterID)
 }
 
 func TestFieldExtractionConfigValidation(t *testing.T) {

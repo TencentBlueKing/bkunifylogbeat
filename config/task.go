@@ -345,7 +345,7 @@ func initIDWithConfig(config *TaskConfig) {
 	copyConfig, _ = common.NewConfigFrom(config.RawConfig)
 
 	// Enabled deduplication state belongs to one complete task configuration.
-	// Sender keeps dataid and Processor uses TaskID, while Filter and Input remain
+	// Sender keeps dataid, Processor and Filter use TaskID, while Input remains
 	// shareable. Extraction-only and disabled deduplication retain legacy sharing.
 	isolateDeduplication := config.EnabledDeduplication() != nil
 	if !isolateDeduplication {
@@ -368,6 +368,9 @@ func initIDWithConfig(config *TaskConfig) {
 	}
 	_, hashVal = utils.HashRawConfig(copyConfig)
 	config.FilterID = fmt.Sprintf("filter-%s", hashVal)
+	if isolateDeduplication {
+		config.FilterID = fmt.Sprintf("filter-task-%s", config.ID)
+	}
 
 	RemoveFields(copyConfig, config.FiltersConfig)
 	RemoveFields(copyConfig, config.FieldExtractionConfig)
