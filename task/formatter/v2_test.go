@@ -105,6 +105,18 @@ func TestV2Formatter_Multi(t *testing.T) {
 	assert.Equal(t, data["items"].([]LineItem)[1].Data, event.Event.Texts[1])
 }
 
+func TestV2FormatterReturnsNilForStateOnlyEvent(t *testing.T) {
+	taskConfig, err := config.CreateTaskConfig(map[string]interface{}{"dataid": "999990002"})
+	assert.NoError(t, err)
+	f, err := NewV2Formatter(taskConfig)
+	assert.NoError(t, err)
+
+	stateOnly := util.NewData()
+	stateOnly.SetState(file.State{Source: "/tmp/state-only.log", Offset: 99})
+
+	assert.Nil(t, f.Format([]*util.Data{stateOnly}))
+}
+
 func TestV2FormatterMountReplace(t *testing.T) {
 	vars := map[string]interface{}{
 		"dataid":          "999990001",

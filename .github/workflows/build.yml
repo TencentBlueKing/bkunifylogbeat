@@ -29,4 +29,6 @@ jobs:
         run: |
           make
           ./bin/bkunifylogbeat -v
+          CGO_ENABLED=0 GOOS=linux GOARCH=386 go build -o bin/bkunifylogbeat-linux-386
+          CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -o bin/bkunifylogbeat-windows-386.exe
           rm -rf ./bin

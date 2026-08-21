@@ -35,6 +35,7 @@ import (
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/sender"
+	"github.com/TencentBlueKing/bkunifylogbeat/task/transform"
 )
 
 var (
@@ -45,13 +46,19 @@ var (
 
 	processDroppedTotal = bkmonitoring.NewInt("processors_dropped_total")
 	processHandledTotal = bkmonitoring.NewInt("processors_handled_total")
+
+	fieldExtractionFailedTotal = bkmonitoring.NewInt("field_extraction_failed_total")
+	dedupDroppedTotal          = bkmonitoring.NewInt("dedup_dropped_total")
+	dedupEvictedKeysTotal      = bkmonitoring.NewInt("dedup_evicted_keys_total")
+	dedupFailOpenTotal         = bkmonitoring.NewInt("dedup_fail_open_total")
 )
 
 // Processors 兼容数据平台过滤规则
 type Processors struct {
 	*base.Node
 
-	processors *process.Processors
+	transformer *transform.Pipeline
+	processors  *process.Processors
 }
 
 // GetProcessors 获取processor
@@ -134,6 +141,9 @@ func (p *Processors) MergeProcessorsConfig(taskCfg *config.TaskConfig) error {
 			return fmt.Errorf("create libbeat.processors faied, err=>%v", err)
 		}
 	}
+	if p.transformer == nil && taskCfg.FieldExtraction != nil {
+		p.transformer = transform.NewPipeline(taskCfg)
+	}
 	return nil
 }
 
@@ -148,26 +158,99 @@ func (p *Processors) Run() {
 			return
 		case e := <-p.In:
 			data := e.(*util.Data)
-			event := p.Handle(&data.Event)
-			if event != nil {
+			taskData := p.process(data)
+			if taskData != nil {
 				for _, out := range p.GetOuts() {
 					select {
 					case <-p.End:
 						logp.L.Infof("node processor(%s) is done", p.ID)
 						return
-					case out <- data:
+					case out <- taskData:
 						processHandledTotal.Add(1)
 					}
 				}
-			} else {
-				processDroppedTotal.Add(1)
-				p.ForEachTaskNode(func(tNode *base.TaskNode) {
-					base.CrawlerDropped.Add(1)
-					tNode.CrawlerDropped.Add(1)
-				})
 			}
 		}
 	}
+}
+
+func (p *Processors) process(data *util.Data) *util.Data {
+	taskData := data
+	if p.transformer != nil {
+		outcome := p.transformer.Apply(data)
+		p.recordTransformOutcome(outcome)
+		if outcome.Data == nil {
+			if outcome.DedupDropped > 0 {
+				// Advance the persisted offset immediately when deduplication removes
+				// the whole event, without turning extraction failures into state events.
+				stateData := util.NewData()
+				stateData.SetState(data.GetState())
+				return stateData
+			}
+			return nil
+		}
+		taskData = outcome.Data
+	}
+
+	event := p.Handle(&taskData.Event)
+	if event == nil {
+		p.recordDropped(1)
+		return nil
+	}
+	if event != &taskData.Event {
+		taskData.Event = *event
+	}
+	return taskData
+}
+
+func (p *Processors) recordTransformOutcome(outcome transform.Outcome) {
+	if outcome.ExtractFailed == 0 && outcome.DedupDropped == 0 && outcome.EvictedKeys == 0 && outcome.FailOpen == 0 {
+		return
+	}
+
+	if outcome.ExtractFailed > 0 {
+		fieldExtractionFailedTotal.Add(outcome.ExtractFailed)
+	}
+	if outcome.DedupDropped > 0 {
+		dedupDroppedTotal.Add(outcome.DedupDropped)
+	}
+	if outcome.EvictedKeys > 0 {
+		dedupEvictedKeysTotal.Add(outcome.EvictedKeys)
+	}
+	if outcome.FailOpen > 0 {
+		dedupFailOpenTotal.Add(outcome.FailOpen)
+	}
+
+	dropped := outcome.ExtractFailed + outcome.DedupDropped
+	if dropped > 0 {
+		processDroppedTotal.Add(dropped)
+	}
+	p.ForEachTaskNode(func(tNode *base.TaskNode) {
+		if outcome.ExtractFailed > 0 {
+			tNode.ExtractFailed.Add(outcome.ExtractFailed)
+		}
+		if outcome.DedupDropped > 0 {
+			tNode.DedupDropped.Add(outcome.DedupDropped)
+		}
+		if outcome.EvictedKeys > 0 {
+			tNode.DedupEvictedKeys.Add(outcome.EvictedKeys)
+		}
+		if outcome.FailOpen > 0 {
+			tNode.DedupFailOpen.Add(outcome.FailOpen)
+		}
+		if dropped > 0 {
+			base.CrawlerDropped.Add(dropped)
+			tNode.CrawlerDropped.Add(dropped)
+		}
+	})
+}
+
+func (p *Processors) recordDropped(count int64) {
+	processDroppedTotal.Add(count)
+	p.ForEachTaskNode(func(tNode *base.TaskNode) {
+		base.CrawlerDropped.Add(count)
+		tNode.CrawlerDropped.Add(count)
+	})
 }
 
 // Handle 处理采集事件
@@ -177,10 +260,7 @@ func (p *Processors) Handle(event *beat.Event) *beat.Event {
 	}
 
 	if p.processors != nil {
-		event := p.processors.Run(event)
-		if event == nil {
-			return nil
-		}
+		return p.processors.Run(event)
 	}
 	return event
 }

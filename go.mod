@@ -8,6 +8,7 @@ require (
 	github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse v1.9.1-alpha.1
 	github.com/TencentBlueKing/bkmonitor-datalink/pkg/utils v0.3.0
 	github.com/bytedance/sonic v1.15.0
+	github.com/cespare/xxhash/v2 v2.2.0
 	github.com/dustin/go-humanize v1.0.0
 	github.com/elastic/beats v7.1.1+incompatible
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
@@ -27,7 +28,6 @@ require (
 	github.com/bytedance/sonic/loader v0.5.0 // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
-	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/containerd/cgroups v1.0.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.1.0 // indirect

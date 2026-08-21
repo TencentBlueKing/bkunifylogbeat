@@ -28,12 +28,15 @@ import (
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
+	"github.com/elastic/beats/filebeat/input/file"
 	"github.com/elastic/beats/filebeat/util"
 	"github.com/elastic/beats/libbeat/common"
 	libbeatlogp "github.com/elastic/beats/libbeat/logp"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
+	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
 	"github.com/TencentBlueKing/bkunifylogbeat/task/formatter"
 	"github.com/TencentBlueKing/bkunifylogbeat/tests"
 
@@ -191,4 +194,50 @@ func TestSend(t *testing.T) {
 	}
 	time.Sleep(200 * time.Millisecond)
 	assert.Equal(t, sendNums, 4)
+}
+
+func TestStateOnlyIsSentImmediatelyWithoutBusinessMetrics(t *testing.T) {
+	vars, err := common.NewConfigFrom(map[string]interface{}{
+		"dataid":        "999990002",
+		"output_format": "v2",
+		"package":       true,
+		"package_count": 10,
+	})
+	require.NoError(t, err)
+	taskConfig, err := config.NewTaskConfig(cfg.Config{}, vars)
+	require.NoError(t, err)
+	taskNode := tests.MockTaskNode(taskConfig)
+	send, err := NewSender(taskConfig, taskNode)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		send.CloseOnce.Do(func() { close(send.End) })
+		send.WaitUntilGameOver()
+	})
+
+	globalCrawlerBefore := base.CrawlerSendTotal.Get()
+	globalReceivedBefore := senderReceived.Get()
+	taskCrawlerBefore := taskNode.CrawlerSendTotal.Get()
+	taskReceivedBefore := taskNode.SenderReceive.Get()
+	globalStateBefore := senderState.Get()
+	taskStateBefore := taskNode.SenderState.Get()
+
+	stateOnly := util.NewData()
+	stateOnly.SetState(file.State{Source: "/tmp/state-only.log", Offset: 99})
+	send.In <- stateOnly
+
+	select {
+	case received := <-taskNode.In:
+		stateEvent := received.(beat.Event)
+		assert.Nil(t, stateEvent.Fields)
+		assert.Equal(t, stateOnly.GetState(), stateEvent.Private)
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("state-only event was not sent immediately")
+	}
+
+	assert.Equal(t, globalCrawlerBefore, base.CrawlerSendTotal.Get())
+	assert.Equal(t, globalReceivedBefore, senderReceived.Get())
+	assert.Equal(t, taskCrawlerBefore, taskNode.CrawlerSendTotal.Get())
+	assert.Equal(t, taskReceivedBefore, taskNode.SenderReceive.Get())
+	assert.Equal(t, globalStateBefore+1, senderState.Get())
+	assert.Equal(t, taskStateBefore+1, taskNode.SenderState.Get())
 }

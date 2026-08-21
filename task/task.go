@@ -61,6 +61,10 @@ func NewTask(config *cfg.TaskConfig, beatDone chan struct{}, lastStates []file.S
 			CrawlerState:     bkmonitoring.NewIntWithDataID(config.DataID, "crawler_state"),
 			CrawlerSendTotal: bkmonitoring.NewIntWithDataID(config.DataID, "crawler_send_total"),
 			CrawlerDropped:   bkmonitoring.NewIntWithDataID(config.DataID, "crawler_dropped"),
+			ExtractFailed:    bkmonitoring.NewIntWithDataID(config.DataID, "field_extraction_failed"),
+			DedupDropped:     bkmonitoring.NewIntWithDataID(config.DataID, "dedup_dropped"),
+			DedupEvictedKeys: bkmonitoring.NewIntWithDataID(config.DataID, "dedup_evicted_keys"),
+			DedupFailOpen:    bkmonitoring.NewIntWithDataID(config.DataID, "dedup_fail_open"),
 
 			// sender metrics
 			SenderReceive:   bkmonitoring.NewIntWithDataID(config.DataID, "sender_received"),

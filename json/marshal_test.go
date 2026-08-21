@@ -20,17 +20,28 @@
 // WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 // SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//go:build !jsonsonic
-
 package json
 
-import stdjson "encoding/json"
+import (
+	stdjson "encoding/json"
+	"testing"
+)
 
-// MarshalToString returns the standard JSON encoding of value as a string.
-func MarshalToString(value interface{}) (string, error) {
-	data, err := stdjson.Marshal(value)
-	if err != nil {
-		return "", err
+func TestMarshalToStringMatchesStandardJSON(t *testing.T) {
+	value := map[string]string{
+		"z-last":  "quotes=\" slash=\\ html=<>& separators=\u2028\u2029",
+		"a-first": "invalid=" + string([]byte{'a', 0xff, 'b'}),
 	}
-	return string(data), nil
+
+	want, err := stdjson.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal expected JSON: %v", err)
+	}
+	got, err := MarshalToString(value)
+	if err != nil {
+		t.Fatalf("marshal JSON: %v", err)
+	}
+	if got != string(want) {
+		t.Fatalf("JSON encoding mismatch:\nwant: %s\n got: %s", want, got)
+	}
 }

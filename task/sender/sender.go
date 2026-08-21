@@ -176,8 +176,8 @@ func (send *Sender) Run() {
 
 		case e := <-send.In:
 			event := e.(*util.Data)
-			// update metric
-			{
+			// State-only events advance the registrar offset but are not business logs.
+			if event.Event.Fields != nil || event.Event.HasTexts() {
 				beatEvent := event.GetEvent()
 				eventCount := int64(beatEvent.Count())
 				base.CrawlerSendTotal.Add(eventCount)

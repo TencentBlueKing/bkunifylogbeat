@@ -43,6 +43,11 @@ func (e *SonicEncoder) Encode(index string, event *beat.Event) ([]byte, error) {
 	return sonic.Marshal(event.Fields)
 }
 
+// MarshalToString returns the standard-compatible Sonic JSON encoding of value as a string.
+func MarshalToString(value interface{}) (string, error) {
+	return sonic.ConfigStd.MarshalToString(value)
+}
+
 func init() {
 	codec.RegisterType("sonic", func(info beat.Info, cfg *common.Config) (codec.Codec, error) {
 		return NewSonicEncoder(), nil
