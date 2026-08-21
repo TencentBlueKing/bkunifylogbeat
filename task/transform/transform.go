@@ -25,11 +25,11 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/bytedance/sonic"
 	"github.com/cespare/xxhash/v2"
 	"github.com/elastic/beats/filebeat/util"
 
 	"github.com/TencentBlueKing/bkunifylogbeat/config"
+	beatjson "github.com/TencentBlueKing/bkunifylogbeat/json"
 )
 
 type result uint8
@@ -154,7 +154,7 @@ func (p *Pipeline) transform(source, text string) (string, result, dedupStats) {
 	for index, name := range p.extractor.names {
 		p.fields[name] = p.values[index]
 	}
-	data, err := sonic.ConfigStd.MarshalToString(p.fields)
+	data, err := beatjson.MarshalToString(p.fields)
 	if err != nil {
 		return "", extractFailed, stats
 	}
