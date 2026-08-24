@@ -18,6 +18,17 @@ local: {% for item in local %}
       package: {{ item.get('package',  'true') | lower }}
       package_count: {{ item.get('package_count', 10) | int }}
       output_format: '{{ item.get('output_format',  'v2') | lower }}'
+      {% if item.field_extraction is defined %}
+      field_extraction:
+        pattern: '{{ item.field_extraction.get('pattern', '') | replace("'", "''") }}'
+        {% if item.field_extraction.deduplication is defined %}
+        deduplication:
+          enabled: {{ item.field_extraction.deduplication.get('enabled', '') | lower }}
+          {% if item.field_extraction.deduplication.window is defined %}window: '{{ item.field_extraction.deduplication.window }}'{% endif %}
+          {% if item.field_extraction.deduplication.max_keys is defined %}max_keys: {{ item.field_extraction.deduplication.max_keys | int }}{% endif %}
+          {% if item.field_extraction.deduplication.max_total_keys is defined %}max_total_keys: {{ item.field_extraction.deduplication.max_total_keys | int }}{% endif %}
+        {% endif %}
+      {% endif %}
       {% if item.multiline_pattern is defined %}
       multiline.pattern: '{{ item['multiline_pattern'] }}'
       multiline.max_lines: '{{ item.get('multiline_max_lines', 500) | int }}'
