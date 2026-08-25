@@ -35,6 +35,10 @@ config_templates:
               title: "FileIdentifier(文件识别模式，inode/path)"
               type: string
               default: "inode"
+            adaptive_scan_enabled:
+              title: "AdaptiveScanEnabled(启用自适应文件扫描周期)"
+              type: boolean
+              default: false
   - plugin_version: "*"
     name: bkunifylogbeat.conf
     version: 1

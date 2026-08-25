@@ -22,9 +22,9 @@ bkunifylogbeat.eventdataid: -1
 bkunifylogbeat.max_cpu_limit: -1
 bkunifylogbeat.cpu_check_times: 10
 # 根据实际扫描耗时动态缩短各文件 input 的扫描周期，并将聚合扫描墙钟耗时
-# 控制在配置的单核预算内；容器 CPU quota 小于 1 核时预算会等比例缩小。默认开启。
+# 控制在配置的单核预算内；容器 CPU quota 小于 1 核时预算会等比例缩小。默认关闭。
 #bkunifylogbeat.adaptive_scan:
-#  enabled: true
+#  enabled: false
 #  min_scan_frequency: "1s"
 #  scan_cpu_percent: 5
 #  control_interval: "3s"

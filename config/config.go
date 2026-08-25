@@ -141,9 +141,9 @@ func Parse(cfg *beat.Config) (Config, error) {
 		BufferTimeout: 1,
 		MaxCpuLimit:   -1,
 		CpuCheckTimes: 10,
-		// 默认开启，并使用 1 秒最小周期和 5% 单核预算作为保守起步参数。
+		// 保留自适应扫描能力，默认关闭；需要时通过主配置显式开启。
 		AdaptiveScan: AdaptiveScanConfig{
-			Enabled:          true,
+			Enabled:          false,
 			MinScanFrequency: time.Second,
 			ScanCPUPercent:   5,
 			ControlInterval:  3 * time.Second,
