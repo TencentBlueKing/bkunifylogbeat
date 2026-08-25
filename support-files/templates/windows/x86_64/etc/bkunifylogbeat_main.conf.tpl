@@ -51,6 +51,11 @@ bkunifylogbeat.file_identifier: {{ extra_vars.file_identifier | default("inode",
 {%- else %}
 bkunifylogbeat.file_identifier: "inode"
 {%- endif %}
+{%- if extra_vars is defined and extra_vars.adaptive_scan_enabled is defined %}
+bkunifylogbeat.adaptive_scan.enabled: {{ extra_vars.adaptive_scan_enabled | lower }}
+{%- else %}
+bkunifylogbeat.adaptive_scan.enabled: false
+{%- endif %}
 
 {% if cmdb_instance.host.bk_cpu and cmdb_instance.host.bk_mem %}
 {%- set resource_limit = resource_limit | default({}) -%}

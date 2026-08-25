@@ -44,6 +44,22 @@ func TestParseAdaptiveScanDefaults(t *testing.T) {
 
 	cfg, err := Parse(raw)
 	assert.NoError(t, err)
+	assert.False(t, cfg.AdaptiveScan.Enabled)
+	assert.Equal(t, time.Second, cfg.AdaptiveScan.MinScanFrequency)
+	assert.Equal(t, float64(5), cfg.AdaptiveScan.ScanCPUPercent)
+	assert.Equal(t, 3*time.Second, cfg.AdaptiveScan.ControlInterval)
+}
+
+func TestParseAdaptiveScanEnabledOnlyUsesDefaults(t *testing.T) {
+	raw, err := common.NewConfigFrom(map[string]interface{}{
+		"adaptive_scan": map[string]interface{}{
+			"enabled": true,
+		},
+	})
+	assert.NoError(t, err)
+
+	cfg, err := Parse(raw)
+	assert.NoError(t, err)
 	assert.True(t, cfg.AdaptiveScan.Enabled)
 	assert.Equal(t, time.Second, cfg.AdaptiveScan.MinScanFrequency)
 	assert.Equal(t, float64(5), cfg.AdaptiveScan.ScanCPUPercent)
