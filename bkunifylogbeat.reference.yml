@@ -61,6 +61,18 @@ bkunifylogbeat.local:
     multiline.max_lines: 500
     multiline.timeout: "5s"
 
+    # 将命名捕获组按声明顺序序列化成 JSON，替换原始日志正文。
+    # 未匹配或任一命名捕获组未参与匹配时，当前日志会被丢弃。
+    # field_extraction:
+    #   pattern: '"traceID":(?P<traceID>\d+)'
+    #   # 按真实文件路径和全部提取值做双窗口去重。省略该块或 enabled=false 时仅提取。
+    #   # max_keys 是单个文件、单代 map 的上限，max_total_keys 是当前采集配置所有文件与两代 map 的总上限。
+    #   deduplication:
+    #     enabled: true
+    #     window: "5s"
+    #     max_keys: 8192
+    #     max_total_keys: 65536
+
     # 自定义字段：兼容旧配置，数据在发送前附加额外字段
     ext_meta: xxx
 
@@ -138,4 +150,3 @@ bkunifylogbeat.local:
 
     ext_meta:
       bk_biz_id: "2"
-

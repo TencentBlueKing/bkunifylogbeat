@@ -20,17 +20,47 @@
 // WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 // SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//go:build !jsonsonic
+package config
 
-package json
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
-import stdjson "encoding/json"
-
-// MarshalToString returns the standard JSON encoding of value as a string.
-func MarshalToString(value interface{}) (string, error) {
-	data, err := stdjson.Marshal(value)
+func TestFileSubConfigTemplatesForwardFieldExtraction(t *testing.T) {
+	templatePaths, err := filepath.Glob("../support-files/templates/*/*/etc/bkunifylogbeat.conf.tpl")
 	if err != nil {
-		return "", err
+		t.Fatalf("find file subconfig templates: %v", err)
 	}
-	return string(data), nil
+	if len(templatePaths) != 6 {
+		t.Fatalf("expected 6 file subconfig templates, got %d", len(templatePaths))
+	}
+
+	requiredFragments := []string{
+		"{% if item.field_extraction is defined %}",
+		"field_extraction:",
+		"pattern: '{{ item.field_extraction.get('pattern', '') | replace(\"'\", \"''\") }}'",
+		"{% if item.field_extraction.deduplication is defined %}",
+		"deduplication:",
+		"enabled: {{ item.field_extraction.deduplication.get('enabled', '') | lower }}",
+		"window: '{{ item.field_extraction.deduplication.window }}'",
+		"max_keys: {{ item.field_extraction.deduplication.max_keys | int }}",
+		"max_total_keys: {{ item.field_extraction.deduplication.max_total_keys | int }}",
+	}
+
+	for _, templatePath := range templatePaths {
+		t.Run(filepath.ToSlash(templatePath), func(t *testing.T) {
+			content, err := os.ReadFile(templatePath)
+			if err != nil {
+				t.Fatalf("read template: %v", err)
+			}
+			for _, fragment := range requiredFragments {
+				if !strings.Contains(string(content), fragment) {
+					t.Errorf("template does not forward %q", fragment)
+				}
+			}
+		})
+	}
 }
