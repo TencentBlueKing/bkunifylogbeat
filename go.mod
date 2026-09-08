@@ -119,6 +119,6 @@ require (
 
 replace (
 	github.com/Sirupsen/logrus v1.6.0 => github.com/sirupsen/logrus v1.9.3
-	github.com/elastic/beats v7.1.1+incompatible => github.com/TencentBlueking/beats v7.1.57-bk+incompatible
+	github.com/elastic/beats v7.1.1+incompatible => github.com/TencentBlueking/beats v7.1.58-bk+incompatible
 	github.com/sirupsen/logrus v1.8.1 => github.com/sirupsen/logrus v1.9.3
 )
