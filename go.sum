@@ -45,8 +45,8 @@ github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse v1.9.1-alpha.1 h1:kJH1O
 github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse v1.9.1-alpha.1/go.mod h1:gDiD8QFEEugzdlgdm7MGPp1szzwgKca0FZkhmTZ67Y0=
 github.com/TencentBlueKing/bkmonitor-datalink/pkg/utils v0.3.0 h1:M22V54nzKf4jReUWp9+rF0255nvlQP/B4zzuXIGyBlU=
 github.com/TencentBlueKing/bkmonitor-datalink/pkg/utils v0.3.0/go.mod h1:ETap19QgROaVGv9E9MRtWMeOgx/gbhbtzcjk4cgadoM=
-github.com/TencentBlueking/beats v7.1.57-bk+incompatible h1:bIqEPcX439j2WV5keondNBcSf2dLQvj+LJ5bHnAR8p8=
-github.com/TencentBlueking/beats v7.1.57-bk+incompatible/go.mod h1:tJ6ZFzI1DAUQUUyvPBYVlmGBuH3QKGDK9mwN4LBg+Os=
+github.com/TencentBlueking/beats v7.1.58-bk+incompatible h1:VXtGsVlkkeDnA18ePZSQn9bjaI7DvOScUhZOOGEIpio=
+github.com/TencentBlueking/beats v7.1.58-bk+incompatible/go.mod h1:tJ6ZFzI1DAUQUUyvPBYVlmGBuH3QKGDK9mwN4LBg+Os=
 github.com/alecthomas/template v0.0.0-20160405071501-a0175ee3bccc/go.mod h1:LOuyumcjzFXgccqObfd/Ljyb9UuFJ6TxHnclSeseNhc=
 github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751/go.mod h1:LOuyumcjzFXgccqObfd/Ljyb9UuFJ6TxHnclSeseNhc=
 github.com/alecthomas/units v0.0.0-20151022065526-2efee857e7cf/go.mod h1:ybxpYRFXyAe+OPACYpWeL0wqObRcbAqCMya13uyzqw0=
