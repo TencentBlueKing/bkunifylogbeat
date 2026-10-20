@@ -147,6 +147,8 @@ type Input struct {
 	runner   *input.Runner
 	runOnce  sync.Once
 	stopOnce sync.Once
+
+	stateSender func(beat.Event)
 }
 
 // Start 启动runner
@@ -197,10 +199,7 @@ func (in *Input) Run() {
 				}
 			} else {
 				// 采集进度类事件
-				beat.SendEvent(beat.Event{
-					Fields:  nil,
-					Private: data.GetState(),
-				})
+				in.sendState(data)
 				base.CrawlerState.Add(1)
 				in.ForEachTaskNode(func(tNode *base.TaskNode) {
 					tNode.CrawlerState.Add(1)
@@ -277,9 +276,39 @@ func (in *Input) OnEvent(data *util.Data) bool {
 
 	select {
 	case <-in.End:
-		return false
+		return in.sendFinalState(data)
+	default:
+	}
+
+	select {
+	case <-in.End:
+		return in.sendFinalState(data)
 	case in.In <- data:
 	}
 
 	return true
+}
+
+func (in *Input) sendFinalState(data *util.Data) bool {
+	if data.Event.Fields != nil {
+		return false
+	}
+
+	// Task removal closes End before the asynchronous runner.Stop executes.
+	// Forward the final state directly so Input.Stop can persist TTL/GraceUntil.
+	in.sendState(data)
+	base.CrawlerState.Add(1)
+	return true
+}
+
+func (in *Input) sendState(data *util.Data) {
+	event := beat.Event{
+		Fields:  nil,
+		Private: data.GetState(),
+	}
+	if in.stateSender != nil {
+		in.stateSender(event)
+		return
+	}
+	beat.SendEvent(event)
 }
