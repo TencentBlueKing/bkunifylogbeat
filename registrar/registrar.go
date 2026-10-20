@@ -341,8 +341,13 @@ func (r *Registrar) gcStates() {
 		return
 	}
 
+	now := time.Now()
 	for _, state := range states {
 		if state.TTL == stateNotManage {
+			if state.GraceUntil != nil && now.Before(*state.GraceUntil) {
+				continue
+			}
+			state.GraceUntil = nil
 			state.TTL = stateNanosecond
 			r.states.Update(state)
 			r.addStateIDCache(state.ID())

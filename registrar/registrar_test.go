@@ -23,6 +23,7 @@
 package registrar
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
@@ -35,6 +36,7 @@ import (
 	beatfile "github.com/elastic/beats/libbeat/common/file"
 	libbeatlogp "github.com/elastic/beats/libbeat/logp"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
 	"github.com/TencentBlueKing/bkunifylogbeat/tests"
@@ -208,4 +210,103 @@ func TestStateFileIdentifierInode(t *testing.T) {
 	registrar.Stop()
 	bkStorage.Close()
 	os.Remove(testRegPath)
+}
+
+func TestGCStatesRespectsGraceUntil(t *testing.T) {
+	tests := []struct {
+		name       string
+		graceUntil *time.Time
+		wantCount  int
+	}{
+		{
+			name:       "future grace retains unmanaged state",
+			graceUntil: timePtr(time.Now().Add(time.Hour)),
+			wantCount:  1,
+		},
+		{
+			name:       "expired grace removes unmanaged state",
+			graceUntil: timePtr(time.Now().Add(-time.Hour)),
+			wantCount:  0,
+		},
+		{
+			name:      "no grace keeps legacy immediate cleanup",
+			wantCount: 0,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			initTestStorage(t)
+			state := file.State{
+				Source:     "/data/logs/grace.log",
+				Finished:   true,
+				TTL:        stateNotManage,
+				GraceUntil: test.graceUntil,
+				FileStateOS: beatfile.StateOS{
+					Inode:  100,
+					Device: 900,
+				},
+			}
+			r := newGCRegistrar(state)
+
+			r.gcStates()
+
+			assert.Equal(t, test.wantCount, r.states.Count())
+			if test.wantCount == 1 {
+				retained := r.states.GetStates()
+				require.Len(t, retained, 1)
+				assert.Equal(t, time.Duration(stateNotManage), retained[0].TTL)
+				assert.Equal(t, test.graceUntil, retained[0].GraceUntil)
+			}
+		})
+	}
+}
+
+func TestGCStatesRespectsPersistedGraceAfterReset(t *testing.T) {
+	initTestStorage(t)
+	graceUntil := time.Now().Add(time.Hour).UTC().Truncate(time.Nanosecond)
+	original := file.State{
+		Source:     "/data/logs/persisted.log",
+		Finished:   true,
+		TTL:        -1,
+		GraceUntil: &graceUntil,
+		FileStateOS: beatfile.StateOS{
+			Inode:  101,
+			Device: 900,
+		},
+	}
+	encoded, err := json.Marshal(original)
+	require.NoError(t, err)
+
+	var restored file.State
+	require.NoError(t, json.Unmarshal(encoded, &restored))
+	reset := ResetStates([]file.State{restored})
+	require.Len(t, reset, 1)
+	assert.Equal(t, time.Duration(stateNotManage), reset[0].TTL)
+	require.NotNil(t, reset[0].GraceUntil)
+	assert.Equal(t, graceUntil, *reset[0].GraceUntil)
+
+	r := newGCRegistrar(reset[0])
+	r.gcStates()
+	assert.Equal(t, 1, r.states.Count(), "future persisted grace must survive collector restart GC")
+}
+
+func newGCRegistrar(state file.State) *Registrar {
+	states := file.NewStates()
+	states.SetStates([]file.State{state})
+	return &Registrar{
+		states:       states,
+		gcRequired:   true,
+		stateIDCache: make(map[string]struct{}),
+	}
+}
+
+func initTestStorage(t *testing.T) {
+	t.Helper()
+	require.NoError(t, bkStorage.Init(filepath.Join(t.TempDir(), "registrar.bkpipe.db"), nil))
+	t.Cleanup(bkStorage.Close)
+}
+
+func timePtr(value time.Time) *time.Time {
+	return &value
 }
