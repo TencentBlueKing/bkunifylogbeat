@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/elastic/beats/libbeat/common"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -47,6 +48,57 @@ func TestTaskConfig_Same(t *testing.T) {
 	}
 	taskConfig3, _ := CreateTaskConfig(vars2)
 	assert.False(t, taskConfig1.Same(taskConfig3))
+}
+
+func TestGlobalStateGraceKeepsInputSharedAcrossDataIDs(t *testing.T) {
+	mainConfig := Config{
+		FileIdentifier: "inode",
+		Registry: Registry{
+			StateGrace: 168 * time.Hour,
+		},
+	}
+	firstRaw, err := common.NewConfigFrom(map[string]interface{}{
+		"dataid": 999990010,
+		"paths":  []string{"/var/log/app.log"},
+	})
+	assert.NoError(t, err)
+	first, err := NewTaskConfig(mainConfig, firstRaw)
+	assert.NoError(t, err)
+
+	secondRaw, err := common.NewConfigFrom(map[string]interface{}{
+		"dataid":              999990011,
+		"paths":               []string{"/var/log/app.log"},
+		"clean_removed_grace": "1h",
+	})
+	assert.NoError(t, err)
+	second, err := NewTaskConfig(mainConfig, secondRaw)
+	assert.NoError(t, err)
+
+	assert.Equal(t, first.InputID, second.InputID, "data IDs with the same source must keep sharing one input")
+	for _, taskConfig := range []*TaskConfig{first, second} {
+		var inputConfig struct {
+			CleanRemovedGrace time.Duration `config:"clean_removed_grace"`
+		}
+		assert.NoError(t, taskConfig.RawConfig.Unpack(&inputConfig))
+		assert.Equal(t, 168*time.Hour, inputConfig.CleanRemovedGrace)
+	}
+}
+
+func TestTaskScopedStateGraceIsIgnoredWhenGlobalGraceDisabled(t *testing.T) {
+	raw, err := common.NewConfigFrom(map[string]interface{}{
+		"dataid":              999990012,
+		"paths":               []string{"/var/log/app.log"},
+		"clean_removed_grace": "168h",
+	})
+	assert.NoError(t, err)
+	taskConfig, err := NewTaskConfig(Config{FileIdentifier: "inode"}, raw)
+	assert.NoError(t, err)
+
+	var inputConfig struct {
+		CleanRemovedGrace time.Duration `config:"clean_removed_grace"`
+	}
+	assert.NoError(t, taskConfig.RawConfig.Unpack(&inputConfig))
+	assert.Zero(t, inputConfig.CleanRemovedGrace)
 }
 
 // TestKafkaTaskConfig 测试kafka任务配置透传

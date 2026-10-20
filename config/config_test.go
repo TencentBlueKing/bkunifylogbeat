@@ -145,54 +145,38 @@ func TestAdaptiveScanConfigRejectsNonFiniteCPUPercent(t *testing.T) {
 	}
 }
 
-func TestParseRegistryMigrationGraceDefaultsDisabled(t *testing.T) {
+func TestParseRegistryStateGraceDefaultsDisabled(t *testing.T) {
 	raw, err := common.NewConfigFrom(map[string]interface{}{})
 	assert.NoError(t, err)
 
 	cfg, err := Parse(raw)
 	assert.NoError(t, err)
-	assert.Zero(t, cfg.Registry.MigrationGrace)
-	assert.Empty(t, cfg.Registry.MigrationSourcePatterns)
+	assert.Zero(t, cfg.Registry.StateGrace)
 }
 
-func TestParseRegistryMigrationGrace(t *testing.T) {
+func TestParseRegistryStateGrace(t *testing.T) {
 	raw, err := common.NewConfigFrom(map[string]interface{}{
 		"registry": map[string]interface{}{
-			"migration_grace":           "168h",
-			"migration_source_patterns": []string{`/volume-subpaths/app-log/`, `/root/app/log/`},
+			"state_grace": "168h",
 		},
 	})
 	assert.NoError(t, err)
 
 	cfg, err := Parse(raw)
 	assert.NoError(t, err)
-	assert.Equal(t, 168*time.Hour, cfg.Registry.MigrationGrace)
-	assert.Equal(t, []string{`/volume-subpaths/app-log/`, `/root/app/log/`}, cfg.Registry.MigrationSourcePatterns)
+	assert.Equal(t, 168*time.Hour, cfg.Registry.StateGrace)
 }
 
-func TestParseRegistryMigrationGraceRequiresValidPatterns(t *testing.T) {
-	tests := []struct {
-		name     string
-		patterns []string
-	}{
-		{name: "missing patterns"},
-		{name: "invalid pattern", patterns: []string{"["}},
-	}
+func TestParseRegistryStateGraceRejectsNegativeValue(t *testing.T) {
+	raw, err := common.NewConfigFrom(map[string]interface{}{
+		"registry": map[string]interface{}{
+			"state_grace": "-1s",
+		},
+	})
+	assert.NoError(t, err)
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			raw, err := common.NewConfigFrom(map[string]interface{}{
-				"registry": map[string]interface{}{
-					"migration_grace":           "1h",
-					"migration_source_patterns": test.patterns,
-				},
-			})
-			assert.NoError(t, err)
-
-			_, err = Parse(raw)
-			assert.Error(t, err)
-		})
-	}
+	_, err = Parse(raw)
+	assert.Error(t, err)
 }
 
 func TestLoadConfig(t *testing.T) {
