@@ -255,6 +255,11 @@ func NewTaskConfig(beatConfig Config, rawConfig *beat.Config) (*TaskConfig, erro
 
 	// TODO 这里需要改造成通用逻辑
 	rawConfig.SetString("file_identifier", -1, beatConfig.FileIdentifier)
+	// State is stored in one node-wide registry and inputs with the same source
+	// are intentionally shared across data IDs. A task-scoped grace value would
+	// split the shared input identity and let different inputs race to update the
+	// same state, so only the main configuration is authoritative.
+	_, _ = rawConfig.Remove("clean_removed_grace", -1)
 
 	err := rawConfig.Unpack(&config)
 	if err != nil {
@@ -262,6 +267,9 @@ func NewTaskConfig(beatConfig Config, rawConfig *beat.Config) (*TaskConfig, erro
 	}
 	if config.DataID == 0 {
 		return nil, fmt.Errorf("error creating task, DataID cannot be empty")
+	}
+	if config.Type == "log" && beatConfig.Registry.StateGrace > 0 {
+		rawConfig.SetString("clean_removed_grace", -1, beatConfig.Registry.StateGrace.String())
 	}
 
 	if err := config.initFieldExtractionAndDeduplication(); err != nil {

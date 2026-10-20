@@ -291,7 +291,7 @@ func TestGCStatesRespectsPersistedGraceAfterReset(t *testing.T) {
 	assert.Equal(t, 1, r.states.Count(), "future persisted grace must survive collector restart GC")
 }
 
-func TestLegacyStateGraceMigrationIsScopedPersistedAndNotExtended(t *testing.T) {
+func TestLegacyStateGraceMigrationIsGlobalPersistedAndNotExtended(t *testing.T) {
 	initTestStorage(t)
 
 	eligible := legacyState(
@@ -302,14 +302,15 @@ func TestLegacyStateGraceMigrationIsScopedPersistedAndNotExtended(t *testing.T) 
 		"/var/host/data/bcs/service/kubelet/pods/deleted/volume-subpaths/app-log/service/4/deleted.log",
 		101, 0,
 	)
-	outOfScope := legacyState("/var/host/var/log/other.log", 102, -1)
-	persistLegacyStates(t, eligible, explicitCleanup, outOfScope)
+	otherLogPath := legacyState("/var/host/var/log/other.log", 102, -1)
+	nonLog := legacyState("/var/host/var/log/events.evtx", 103, -1)
+	nonLog.Type = "wineventlog"
+	persistLegacyStates(t, eligible, explicitCleanup, otherLogPath, nonLog)
 
 	config := cfg.Registry{
-		FlushTimeout:            time.Second,
-		GcFrequency:             time.Minute,
-		MigrationGrace:          time.Hour,
-		MigrationSourcePatterns: []string{`/volume-subpaths/app-log/`},
+		FlushTimeout: time.Second,
+		GcFrequency:  time.Minute,
+		StateGrace:   time.Hour,
 	}
 	first, err := New(config, file.IdentifierInode)
 	require.NoError(t, err)
@@ -317,7 +318,8 @@ func TestLegacyStateGraceMigrationIsScopedPersistedAndNotExtended(t *testing.T) 
 	states := statesBySource(first.GetStates())
 	require.NotNil(t, states[eligible.Source].GraceUntil, "eligible old state must receive migration grace")
 	assert.Nil(t, states[explicitCleanup.Source].GraceUntil, "explicit cleanup state must not be revived")
-	assert.Nil(t, states[outOfScope.Source].GraceUntil, "out-of-scope state must keep legacy behaviour")
+	require.NotNil(t, states[otherLogPath.Source].GraceUntil, "all log paths must use the global state grace")
+	assert.Nil(t, states[nonLog.Source].GraceUntil, "non-log state must keep legacy behaviour")
 	assert.Equal(t, int64(24), states[eligible.Source].Offset)
 
 	firstDeadline := *states[eligible.Source].GraceUntil
@@ -351,10 +353,9 @@ func TestLegacyStateGraceMigrationExpiresAndCleansUp(t *testing.T) {
 	persistLegacyStates(t, state)
 
 	r, err := New(cfg.Registry{
-		FlushTimeout:            time.Second,
-		GcFrequency:             time.Minute,
-		MigrationGrace:          time.Nanosecond,
-		MigrationSourcePatterns: []string{`/volume-subpaths/app-log/`},
+		FlushTimeout: time.Second,
+		GcFrequency:  time.Minute,
+		StateGrace:   time.Nanosecond,
 	}, file.IdentifierInode)
 	require.NoError(t, err)
 	require.NotNil(t, r.GetStates()[0].GraceUntil)

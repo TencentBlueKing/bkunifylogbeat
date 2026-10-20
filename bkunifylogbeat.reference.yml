@@ -9,6 +9,8 @@ path.pid: /var/run/gse
 
 #==================== Registry ================================================
 registry.flush: "1s"
+# Node-wide grace for all log input states. Zero or unset keeps immediate cleanup.
+# bkunifylogbeat.registry.state_grace: "168h"
 
 #==================== Output ================================================
 output.bkpipe:
