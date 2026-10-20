@@ -25,13 +25,18 @@ package config
 import (
 	"math"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
+	libbeat "github.com/elastic/beats/libbeat/beat"
+	"github.com/elastic/beats/libbeat/cmd/instance"
 	"github.com/elastic/beats/libbeat/common"
 	libbeatlogp "github.com/elastic/beats/libbeat/logp"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func init() {
@@ -165,6 +170,39 @@ func TestParseRegistryStateGrace(t *testing.T) {
 	cfg, err := Parse(raw)
 	assert.NoError(t, err)
 	assert.Equal(t, 168*time.Hour, cfg.Registry.StateGrace)
+}
+
+func TestExampleConfigsParseStateGraceThroughBeatNamespace(t *testing.T) {
+	examples := []string{
+		"../bkunifylogbeat.reference.yml",
+		"../bkunifylogbeat_main.yml",
+	}
+
+	for _, example := range examples {
+		t.Run(filepath.Base(example), func(t *testing.T) {
+			content, err := os.ReadFile(example)
+			require.NoError(t, err)
+
+			const commented = `# bkunifylogbeat.registry.state_grace: "168h"`
+			require.Contains(t, string(content), commented)
+			content = []byte(strings.Replace(string(content), commented, commented[2:], 1))
+
+			rawConfig, err := common.NewConfigWithYAML(content, example)
+			require.NoError(t, err)
+			beatInstance := &instance.Beat{
+				Beat: libbeat.Beat{
+					Info: libbeat.Info{Beat: "bkunifylogbeat"},
+				},
+				RawConfig: rawConfig,
+			}
+
+			beatConfig, err := beatInstance.BeatConfig()
+			require.NoError(t, err)
+			cfg, err := Parse(beatConfig)
+			require.NoError(t, err)
+			assert.Equal(t, 168*time.Hour, cfg.Registry.StateGrace)
+		})
+	}
 }
 
 func TestParseRegistryStateGraceRejectsNegativeValue(t *testing.T) {

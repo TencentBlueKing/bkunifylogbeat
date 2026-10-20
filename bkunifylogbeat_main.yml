@@ -8,7 +8,7 @@ path.pid: /var/run
 
 #==================== Registry ================================================
 registry.flush: "1s"
-# registry.state_grace: "168h"
+# bkunifylogbeat.registry.state_grace: "168h"
 
 #==================== Output ================================================
 output.console:
