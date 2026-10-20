@@ -27,6 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"sync"
 	"time"
 
@@ -47,6 +48,8 @@ const (
 	stateNanosecond = 1
 	stateNotManage  = -2
 	stateKeyPrefix  = "state:"
+
+	stateGraceMigrationDeadlineKey = "state_grace_migration_deadline:v1"
 )
 
 var (
@@ -69,11 +72,24 @@ type Registrar struct {
 	stateIDCache map[string]struct{} // 等待持久化的状态ID
 
 	fileIdentifier string
+
+	migrationGrace          time.Duration
+	migrationSourceMatchers []*regexp.Regexp
+	now                     func() time.Time
 }
 
 // New creates a new Registrar instance, updating the registry file on
 // `file.State` updates. New fails if the file can not be opened or created.
 func New(config cfg.Registry, fileIdentifier string) (*Registrar, error) {
+	migrationSourceMatchers := make([]*regexp.Regexp, 0, len(config.MigrationSourcePatterns))
+	for _, pattern := range config.MigrationSourcePatterns {
+		matcher, err := regexp.Compile(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("compile registry migration source pattern %q: %w", pattern, err)
+		}
+		migrationSourceMatchers = append(migrationSourceMatchers, matcher)
+	}
+
 	r := &Registrar{
 		done: make(chan struct{}),
 		wg:   sync.WaitGroup{},
@@ -86,6 +102,10 @@ func New(config cfg.Registry, fileIdentifier string) (*Registrar, error) {
 		stateIDCache: make(map[string]struct{}),
 
 		fileIdentifier: fileIdentifier,
+
+		migrationGrace:          config.MigrationGrace,
+		migrationSourceMatchers: migrationSourceMatchers,
+		now:                     time.Now,
 	}
 	return r, r.Init()
 }
@@ -170,6 +190,10 @@ func (r *Registrar) Init() error {
 	states = r.deduplicateStates(states)
 
 	states = r.migrate(states)
+	states, err = r.migrateLegacyStateGrace(states)
+	if err != nil {
+		return err
+	}
 	logp.L.Infof("load states: time=>%s, count=>%d, flush=>%s, gcFrequency=>%s",
 		t, len(states), r.flushTimeout, r.gcFrequency)
 
@@ -326,6 +350,100 @@ func (r *Registrar) migrate(states []file.State) []file.State {
 	return states
 }
 
+// migrateLegacyStateGrace gives eligible states from an old registry one bounded
+// grace window during the first upgrade. Old states do not contain GraceUntil, so
+// the per-input clean_removed_grace setting cannot protect a state while its Pod
+// is absent from this node.
+//
+// The migration is disabled by default and requires source patterns. A persisted
+// deadline is shared by all restarts, so restarting the collector never extends
+// the window. States already pending timed cleanup (TTL >= 0) are not revived.
+func (r *Registrar) migrateLegacyStateGrace(states []file.State) ([]file.State, error) {
+	if r.migrationGrace <= 0 || len(r.migrationSourceMatchers) == 0 || len(states) == 0 {
+		return states, nil
+	}
+
+	now := r.currentTime()
+	deadline, err := r.loadOrCreateMigrationDeadline(now)
+	if err != nil {
+		return nil, err
+	}
+	if !now.Before(deadline) {
+		return states, nil
+	}
+
+	migrated := 0
+	for index, state := range states {
+		if state.GraceUntil != nil || state.TTL >= 0 {
+			continue
+		}
+		if state.Type != "" && state.Type != "log" {
+			continue
+		}
+		if !r.matchesMigrationSource(state.Source) {
+			continue
+		}
+
+		state.GraceUntil = stateTimePtr(deadline)
+		states[index] = state
+
+		encoded, marshalErr := json.Marshal(state)
+		if marshalErr != nil {
+			return nil, fmt.Errorf("marshal migrated registry state %s: %w", state.ID(), marshalErr)
+		}
+		if setErr := bkStorage.Set(r.getStateStorageKey(state), string(encoded), 0); setErr != nil {
+			return nil, fmt.Errorf("persist migrated registry state %s: %w", state.ID(), setErr)
+		}
+		migrated++
+	}
+
+	logp.L.Infof(
+		"migrate legacy states to grace deadline=>%s, matched=>%d, total=>%d",
+		deadline.Format(time.RFC3339Nano), migrated, len(states),
+	)
+	return states, nil
+}
+
+func (r *Registrar) loadOrCreateMigrationDeadline(now time.Time) (time.Time, error) {
+	value, err := bkStorage.Get(stateGraceMigrationDeadlineKey)
+	if err == nil {
+		deadline, parseErr := time.Parse(time.RFC3339Nano, value)
+		if parseErr != nil {
+			return time.Time{}, fmt.Errorf("parse state grace migration deadline: %w", parseErr)
+		}
+		return deadline, nil
+	}
+	if !errors.Is(err, bkStorage.ErrNotFound) {
+		return time.Time{}, fmt.Errorf("get state grace migration deadline: %w", err)
+	}
+
+	deadline := now.Add(r.migrationGrace).UTC()
+	if err = bkStorage.Set(stateGraceMigrationDeadlineKey, deadline.Format(time.RFC3339Nano), 0); err != nil {
+		return time.Time{}, fmt.Errorf("persist state grace migration deadline: %w", err)
+	}
+	return deadline, nil
+}
+
+func (r *Registrar) matchesMigrationSource(source string) bool {
+	for _, matcher := range r.migrationSourceMatchers {
+		if matcher.MatchString(source) {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *Registrar) currentTime() time.Time {
+	if r.now != nil {
+		return r.now()
+	}
+	return time.Now()
+}
+
+func stateTimePtr(value time.Time) *time.Time {
+	return &value
+}
+
 // gcStates runs a registry Cleanup. The method check if more event in the
 // registry can be gc'ed in the future. If no potential removable state is found,
 // the gcEnabled flag is set to false, indicating the current registrar state being
@@ -341,7 +459,7 @@ func (r *Registrar) gcStates() {
 		return
 	}
 
-	now := time.Now()
+	now := r.currentTime()
 	for _, state := range states {
 		if state.TTL == stateNotManage {
 			if state.GraceUntil != nil && now.Before(*state.GraceUntil) {

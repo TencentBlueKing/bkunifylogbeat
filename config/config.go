@@ -25,6 +25,7 @@ package config
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"time"
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
@@ -108,8 +109,28 @@ type Seccomp struct {
 
 // 采集状态
 type Registry struct {
-	FlushTimeout time.Duration `config:"flush"`
-	GcFrequency  time.Duration `config:"gc_frequency"`
+	FlushTimeout            time.Duration `config:"flush"`
+	GcFrequency             time.Duration `config:"gc_frequency"`
+	MigrationGrace          time.Duration `config:"migration_grace"`
+	MigrationSourcePatterns []string      `config:"migration_source_patterns"`
+}
+
+func (c Registry) Validate() error {
+	if c.MigrationGrace < 0 {
+		return fmt.Errorf("registry.migration_grace must not be negative")
+	}
+	if c.MigrationGrace == 0 {
+		return nil
+	}
+	if len(c.MigrationSourcePatterns) == 0 {
+		return fmt.Errorf("registry.migration_source_patterns is required when migration_grace is enabled")
+	}
+	for _, pattern := range c.MigrationSourcePatterns {
+		if _, err := regexp.Compile(pattern); err != nil {
+			return fmt.Errorf("invalid registry migration source pattern %q: %w", pattern, err)
+		}
+	}
+	return nil
 }
 
 // Factory 默认配置
@@ -162,6 +183,9 @@ func Parse(cfg *beat.Config) (Config, error) {
 		return config, fmt.Errorf("unpack config error, %v", err)
 	}
 	if err = config.AdaptiveScan.Validate(); err != nil {
+		return config, err
+	}
+	if err = config.Registry.Validate(); err != nil {
 		return config, err
 	}
 	logp.L.Infof("load config: %+v", config)
