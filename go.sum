@@ -43,6 +43,8 @@ github.com/StackExchange/wmi v1.2.1 h1:VIkavFPXSjcnS+O8yTq7NI32k0R5Aj+v39y29VYDO
 github.com/StackExchange/wmi v1.2.1/go.mod h1:rcmrprowKIVzvc+NUiLncP2uuArMWLCbu9SBzvHz7e8=
 github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse v1.9.1-alpha.1 h1:kJH1OBDFj+lHSYPcxN/JAlZV5XbPWgGB8wDi0WcZ7B8=
 github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse v1.9.1-alpha.1/go.mod h1:gDiD8QFEEugzdlgdm7MGPp1szzwgKca0FZkhmTZ67Y0=
+github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse v1.9.2-alpha.1 h1:sZJacJHOe2vSHBNyj3RnhGAsv7elqj5bAaPU8iqZ7f0=
+github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse v1.9.2-alpha.1/go.mod h1:gDiD8QFEEugzdlgdm7MGPp1szzwgKca0FZkhmTZ67Y0=
 github.com/TencentBlueKing/bkmonitor-datalink/pkg/utils v0.3.0 h1:M22V54nzKf4jReUWp9+rF0255nvlQP/B4zzuXIGyBlU=
 github.com/TencentBlueKing/bkmonitor-datalink/pkg/utils v0.3.0/go.mod h1:ETap19QgROaVGv9E9MRtWMeOgx/gbhbtzcjk4cgadoM=
 github.com/TencentBlueking/beats v7.1.59-bk+incompatible h1:5aJBYziuKKflj6/PENbbw8BMPxuWOw0UNx0EtisBQek=
