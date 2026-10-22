@@ -5,7 +5,7 @@ go 1.24.0
 toolchain go1.24.11
 
 require (
-	github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse v1.9.1-alpha.1
+	github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse v1.9.2-alpha.1
 	github.com/TencentBlueKing/bkmonitor-datalink/pkg/utils v0.3.0
 	github.com/bytedance/sonic v1.15.0
 	github.com/cespare/xxhash/v2 v2.2.0

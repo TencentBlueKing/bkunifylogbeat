@@ -139,3 +139,18 @@ func TestManagerConfigureAdaptiveScanSerializesConcurrentReplacement(t *testing.
 	assert.NoError(t, manager.configureAdaptiveScan(cfg.AdaptiveScanConfig{Enabled: false}))
 	assert.Nil(t, manager.adaptiveScan)
 }
+
+func TestManagerStopIdempotent(t *testing.T) {
+	originalStopMetric := taskStop.Get()
+	t.Cleanup(func() { taskStop.Set(originalStopMetric) })
+	taskStop.Set(0)
+
+	manager := &Manager{
+		setAdaptiveScanHooksFunc: func(input.AdaptiveScanHooks) {},
+	}
+
+	assert.NoError(t, manager.Stop())
+	assert.NoError(t, manager.Stop())
+	// stopOnce ensures the manager stop metric is decremented exactly once.
+	assert.Equal(t, int64(-1), taskStop.Get())
+}
