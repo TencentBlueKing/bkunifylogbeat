@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
@@ -63,6 +64,9 @@ type LogBeat struct {
 
 	isReload     bool
 	lastTaskHash string
+
+	// stopOnce 保证任务与 done 通道只停止/关闭一次，重复调用 Stop 安全。
+	stopOnce sync.Once
 }
 
 // New create cadvisor beat
@@ -161,7 +165,11 @@ func (bt *LogBeat) Run() error {
 	defer Registrar.Stop()
 
 	if err := bt.manager.Start(); err != nil {
-		logp.L.Error("failed to start manager ")
+		logp.L.Errorf("failed to start manager, error: %v", err)
+		// Manager.Start 可能已经启动了部分任务，返回错误前先停任务；
+		// Registrar 的 defer 随后执行，最后才由 main 释放框架/Storage。
+		bt.Stop()
+		return fmt.Errorf("could not start manager: %w", err)
 	}
 
 	if runtime.GOOS == "windows" {
@@ -209,9 +217,17 @@ func (bt *LogBeat) Run() error {
 }
 
 // Stop beater interface
+// 幂等：重复调用不会重复停止 Manager，也不会重复 close(done)；
+// manager/done 为空（例如测试中直接构造 LogBeat）时同样安全。
 func (bt *LogBeat) Stop() {
-	bt.manager.Stop()
-	close(bt.done)
+	bt.stopOnce.Do(func() {
+		if bt.manager != nil {
+			bt.manager.Stop()
+		}
+		if bt.done != nil {
+			close(bt.done)
+		}
+	})
 }
 
 // GetRawConfig Get raw main config

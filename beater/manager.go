@@ -23,6 +23,7 @@
 package beater
 
 import (
+	"flag"
 	"fmt"
 	"sync"
 	"time"
@@ -56,11 +57,28 @@ type Manager struct {
 	wg       sync.WaitGroup
 	beatDone chan struct{}
 
+	// stopOnce 保证 Manager.Stop 只执行一次；-T 预览的错误退出路径可能由
+	// LogBeat.Stop 与入口清理重复触发。
+	stopOnce sync.Once
+
+	// isTestMode 用于 -T 预览：任务启动失败时向上返回错误，避免入口静默等待。
+	// 普通模式仍保留逐任务容错语义。
+	isTestMode func() bool
+	// startTaskFunc 仅供测试注入任务启动错误，生产路径为 nil。
+	startTaskFunc func(*cfg.TaskConfig, []file.State) error
+
 	// 自适应扫描控制器由 Manager 独占管理；配置锁保证并发 Reload 时只会有一条替换链路。
 	adaptiveScan             *utils.AdaptiveScanController
 	adaptiveScanConfig       cfg.AdaptiveScanConfig
 	adaptiveScanMu           sync.Mutex
 	setAdaptiveScanHooksFunc func(filebeatinput.AdaptiveScanHooks)
+}
+
+// testModeEnabled 通过 libgse 注册的 -T 标志判断当前是否为预览模式。
+// 不新增 libgse API，避免在依赖版本发布前扩大跨模块接口。
+func testModeEnabled() bool {
+	testModeFlag := flag.Lookup("T")
+	return testModeFlag != nil && testModeFlag.Value.String() == "true"
 }
 
 // NewManager create new manager
@@ -70,6 +88,7 @@ func NewManager(config cfg.Config, beatDone chan struct{}) (*Manager, error) {
 		beatDone:                 beatDone,
 		tasks:                    make(map[string]*task.Task),
 		setAdaptiveScanHooksFunc: filebeatinput.SetAdaptiveScanHooks,
+		isTestMode:               testModeEnabled,
 	}
 
 	return m, nil
@@ -88,10 +107,20 @@ func (m *Manager) Start() error {
 	// Task
 	lastStates := registrar.ResetStates(Registrar.GetStates())
 	tasks := cfg.GetTasks(m.config)
+	startTask := m.startTask
+	if m.startTaskFunc != nil {
+		startTask = m.startTaskFunc
+	}
 	for taskID, taskConfig := range tasks {
-		err = m.startTask(taskConfig, lastStates)
+		err = startTask(taskConfig, lastStates)
 		if err != nil {
 			logp.L.Errorf("error creating task, taskID=>%s, err=>%v", taskID, err)
+			// -T 预览必须把无效任务配置暴露给入口，由入口非零退出；
+			// 普通模式保留既有的逐任务容错语义。
+			if m.isTestMode != nil && m.isTestMode() {
+				return fmt.Errorf("failed to start task %s: %w", taskID, err)
+			}
+			continue
 		}
 		taskStarted.Add(1)
 	}
@@ -101,14 +130,16 @@ func (m *Manager) Start() error {
 
 // Stop Close manager when program quit
 func (m *Manager) Stop() error {
-	// 先卸载 hooks，再停止 Task，避免 Runner 退出期间继续调用即将销毁的控制器。
-	_ = m.configureAdaptiveScan(cfg.AdaptiveScanConfig{Enabled: false})
-	for _, t := range m.tasks {
-		t.Stop()
-		m.wg.Done()
-	}
-	m.wg.Wait()
-	taskStop.Sub(1)
+	m.stopOnce.Do(func() {
+		// 先卸载 hooks，再停止 Task，避免 Runner 退出期间继续调用即将销毁的控制器。
+		_ = m.configureAdaptiveScan(cfg.AdaptiveScanConfig{Enabled: false})
+		for _, t := range m.tasks {
+			t.Stop()
+			m.wg.Done()
+		}
+		m.wg.Wait()
+		taskStop.Sub(1)
+	})
 	return nil
 }
 
