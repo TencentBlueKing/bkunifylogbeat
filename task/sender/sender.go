@@ -175,6 +175,10 @@ func (send *Sender) Run() {
 			send.cache = make(map[string][]*util.Data)
 
 		case e := <-send.In:
+			if marker, ok := e.(*base.DrainMarker); ok {
+				send.handleDrain(marker)
+				continue
+			}
 			event := e.(*util.Data)
 			// State-only events advance the registrar offset but are not business logs.
 			if event.Event.Fields != nil || event.Event.HasTexts() {
@@ -192,6 +196,31 @@ func (send *Sender) Run() {
 				logp.L.Errorf("send event error, %v", err)
 				continue
 			}
+		}
+	}
+}
+
+// handleDrain flushes every source's current package through the existing
+// send() path, then forwards the marker only to the task that finished. This
+// deliberately reuses send() instead of adding a second publish function.
+func (send *Sender) handleDrain(marker *base.DrainMarker) {
+	for _, buffer := range send.cache {
+		if len(buffer) > 0 {
+			send.send(buffer)
+		}
+	}
+	send.cache = make(map[string][]*util.Data)
+
+	outs := send.GetOuts()
+	for _, nextID := range send.NextNodeIDsForTask(marker.TaskID) {
+		out, ok := outs[nextID]
+		if !ok {
+			continue
+		}
+		select {
+		case <-send.End:
+			return
+		case out <- marker:
 		}
 	}
 }

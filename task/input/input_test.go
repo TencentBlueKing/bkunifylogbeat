@@ -7,10 +7,13 @@ package input
 
 import (
 	"testing"
+	"time"
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	"github.com/elastic/beats/filebeat/input/file"
 	"github.com/elastic/beats/filebeat/util"
+	libbeatlogp "github.com/elastic/beats/libbeat/logp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -18,6 +21,10 @@ import (
 	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
 	"github.com/TencentBlueKing/bkunifylogbeat/utils"
 )
+
+func init() {
+	logp.SetLogger(libbeatlogp.L())
+}
 
 func TestAdaptiveScanMetadataFromTask(t *testing.T) {
 	taskConfig := &config.TaskConfig{
@@ -62,4 +69,47 @@ func TestOnEventRejectsLogAfterInputClosed(t *testing.T) {
 	data := &util.Data{Event: beat.Event{Fields: beat.MapStr{"data": "late log"}}}
 
 	assert.False(t, in.OnEvent(data))
+}
+
+type fakeCompletionSource struct {
+	completion chan struct{}
+	err        error
+}
+
+func (f *fakeCompletionSource) Completion() (<-chan struct{}, bool) {
+	return f.completion, true
+}
+
+func (f *fakeCompletionSource) CompletionErr() error {
+	return f.err
+}
+
+func TestWatchCompletionInjectsDrainMarker(t *testing.T) {
+	node := base.NewEmptyNode("input-a")
+	source := &fakeCompletionSource{completion: make(chan struct{})}
+	in := &Input{Node: node, completionSource: source}
+
+	filter := base.NewEmptyNode("filter-a")
+	in.AddOutput(filter)
+	in.AddTaskNode(filter, &base.TaskNode{Node: base.NewEmptyNode("task-a")})
+
+	go in.Run()
+	in.WatchCompletion("task-a")
+	close(source.completion)
+
+	select {
+	case raw := <-filter.In:
+		marker, ok := raw.(*base.DrainMarker)
+		require.True(t, ok, "completion must inject a DrainMarker")
+		assert.Equal(t, "task-a", marker.TaskID)
+	case <-time.After(time.Second):
+		t.Fatal("drain marker was not injected after completion")
+	}
+
+	close(node.End)
+	select {
+	case <-node.GameOver:
+	case <-time.After(time.Second):
+		t.Fatal("input did not stop")
+	}
 }

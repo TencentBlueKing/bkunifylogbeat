@@ -47,6 +47,14 @@ type NodeI interface {
 	Run()
 }
 
+// DrainMarker is an in-process control event for the -T Kafka preview. It is
+// injected after the finite input has stopped producing events and travels
+// through the existing Node/In channels; it is never published to the output.
+type DrainMarker struct {
+	TaskID string
+	Err    error
+}
+
 type Node struct {
 	ID         string
 	ParentNode *Node
@@ -158,6 +166,42 @@ func (n *Node) ForEachTaskNodeBy(nextID string, f func(*TaskNode)) {
 		}
 	}
 	n.taskNodeMutex.RUnlock()
+}
+
+// NextNodeIDsForTask returns the downstream node IDs that still belong to the
+// given task. A shared node may serve several tasks; a drain marker must only
+// follow the branch of the task that produced the completion.
+func (n *Node) NextNodeIDsForTask(taskID string) []string {
+	n.taskNodeMutex.RLock()
+	defer n.taskNodeMutex.RUnlock()
+
+	var ids []string
+	for nextID, taskNodes := range n.TaskNodeList {
+		if _, ok := taskNodes[taskID]; ok {
+			ids = append(ids, nextID)
+		}
+	}
+	return ids
+}
+
+// ForwardDrain forwards a drain marker to the downstream branches of its task.
+// It never fans out to unrelated tasks that share the same node instance.
+func (n *Node) ForwardDrain(marker *DrainMarker) {
+	if marker == nil {
+		return
+	}
+	outs := n.GetOuts()
+	for _, nextID := range n.NextNodeIDsForTask(marker.TaskID) {
+		out, ok := outs[nextID]
+		if !ok {
+			continue
+		}
+		select {
+		case <-n.End:
+			return
+		case out <- marker:
+		}
+	}
 }
 
 // GetOuts 返回当前 Outs 的浅拷贝快照，避免遍历时长时间持有锁

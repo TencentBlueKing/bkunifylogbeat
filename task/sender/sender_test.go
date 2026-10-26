@@ -196,6 +196,64 @@ func TestSend(t *testing.T) {
 	assert.Equal(t, sendNums, 4)
 }
 
+func TestSenderDrainFlushesCacheBeforeMarker(t *testing.T) {
+	vars, err := common.NewConfigFrom(map[string]interface{}{
+		"dataid":        "999990003",
+		"output_format": outputFormat,
+		"package":       true,
+		"package_count": 100,
+	})
+	require.NoError(t, err)
+	taskConfig, err := config.NewTaskConfig(cfg.Config{}, vars)
+	require.NoError(t, err)
+	taskNode := tests.MockTaskNode(taskConfig)
+
+	send := &Sender{
+		Node:           base.NewEmptyNode(taskConfig.SenderID),
+		cache:          map[string][]*util.Data{},
+		sendConfig:     taskConfig.SenderConfig,
+		formatter:      mockFormatter{taskConfig: taskConfig},
+		taskConfigMaps: map[string]*config.TaskConfig{taskConfig.ID: taskConfig},
+	}
+	send.AddOutput(taskNode.Node)
+	send.AddTaskNode(taskNode.Node, taskNode)
+
+	data := tests.MockLogEvent(fileSource1, fileText)
+	// The event is already in the package cache when the drain marker arrives.
+	send.cache[data.GetState().Source] = []*util.Data{data}
+
+	marker := &base.DrainMarker{TaskID: taskConfig.ID}
+	done := make(chan struct{})
+	go func() {
+		send.handleDrain(marker)
+		close(done)
+	}()
+
+	select {
+	case received := <-taskNode.In:
+		event, ok := received.(beat.Event)
+		require.True(t, ok, "cached package must be sent before the marker")
+		assert.NotNil(t, event.Fields)
+	case <-time.After(time.Second):
+		t.Fatal("cached package was not flushed before the drain marker")
+	}
+
+	select {
+	case received := <-taskNode.In:
+		got, ok := received.(*base.DrainMarker)
+		require.True(t, ok, "drain marker was not forwarded after the cached package")
+		assert.Equal(t, taskConfig.ID, got.TaskID)
+	case <-time.After(time.Second):
+		t.Fatal("drain marker was not forwarded")
+	}
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("handleDrain did not return")
+	}
+}
+
 func TestStateOnlyIsSentImmediatelyWithoutBusinessMetrics(t *testing.T) {
 	vars, err := common.NewConfigFrom(map[string]interface{}{
 		"dataid":        "999990002",
