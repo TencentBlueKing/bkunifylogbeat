@@ -88,6 +88,27 @@ func TestTaskIgnoresMarkerForAnotherTask(t *testing.T) {
 	assert.False(t, isClosedForTest(called))
 }
 
+func TestTaskStopDoesNotCompletePreview(t *testing.T) {
+	taskInst := newMarkerTask()
+	called := make(chan struct{}, 1)
+	taskInst.SetPreviewCompletion(func(error) { called <- struct{}{} })
+
+	go taskInst.Run()
+	close(taskInst.End)
+
+	select {
+	case <-taskInst.GameOver:
+	case <-time.After(time.Second):
+		t.Fatal("task did not stop after End was closed")
+	}
+
+	select {
+	case <-called:
+		t.Fatal("task stop completed the preview without a drain marker")
+	default:
+	}
+}
+
 func isClosedForTest(ch chan struct{}) bool {
 	select {
 	case <-ch:

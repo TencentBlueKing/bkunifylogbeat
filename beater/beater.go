@@ -171,6 +171,7 @@ func (bt *LogBeat) Run() error {
 		bt.Stop()
 		return fmt.Errorf("could not start manager: %w", err)
 	}
+	previewDone := bt.manager.PreviewDone()
 
 	if runtime.GOOS == "windows" {
 		go bt.windowsReload()
@@ -206,14 +207,55 @@ func (bt *LogBeat) Run() error {
 			}
 		case <-beat.ReloadChan:
 			bt.isReload = true
+		// The finite Kafka preview finished on its own: the producer has
+		// stopped, the drain marker has traversed the Task pipeline and the
+		// Sender cache has been flushed.
+		case <-previewDone:
+			return bt.finishPreview(bt.manager.PreviewErr())
 		// 处理采集器框架发送的结束采集器的信号（常由SIGINT引起），关闭采集器
 		case <-beat.Done:
+			if previewDone != nil {
+				return bt.finishPreviewAfterSignal()
+			}
 			bt.Stop()
 			return nil
 		}
 	}
 	logp.L.Info("Shutting down.")
 	return nil
+}
+
+// finishPreview waits for every published event to be acknowledged and for the
+// console batch to be flushed, then stops the Task/Manager. Registrar.Stop is
+// still owned by Run's defer; storage is released by main's beat.Stop() after
+// Registrar.Stop returns.
+func (bt *LogBeat) finishPreview(err error) error {
+	if waitErr := waitPublishIdle(previewDrainTimeout); waitErr != nil && err == nil {
+		err = waitErr
+	}
+	bt.Stop()
+	return err
+}
+
+// finishPreviewAfterSignal runs the same order as a normal completion, but
+// first asks the Kafka input to stop and waits for its drain marker. It returns
+// a non-nil error because an externally terminated preview is not a successful
+// sample.
+func (bt *LogBeat) finishPreviewAfterSignal() error {
+	bt.manager.StopPreviewInputs()
+
+	select {
+	case <-bt.manager.PreviewDone():
+	case <-time.After(previewSignalTimeout):
+		bt.Stop()
+		return errors.New("preview did not finish after shutdown signal")
+	}
+
+	err := bt.manager.PreviewErr()
+	if err == nil {
+		err = errors.New("preview canceled by shutdown signal")
+	}
+	return bt.finishPreview(err)
 }
 
 // Stop beater interface
@@ -284,6 +326,10 @@ func (bt *LogBeat) Close() error {
 
 // Reload beater interface
 func (bt *LogBeat) Reload(c *beat.Config) {
+	if bt.manager != nil && bt.manager.preview {
+		logp.L.Info("ignoring reload during managed preview")
+		return
+	}
 	logp.L.Infof("reload with: %v", c)
 	err := bt.ParseConfig(c)
 	if err != nil {

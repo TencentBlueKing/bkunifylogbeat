@@ -465,32 +465,54 @@ func (sourceConfig *TaskConfig) Same(targetConfig *TaskConfig) bool {
 }
 
 // loadTasks 从主配置中直接加载任务
-func loadTasks(config Config) map[string]*TaskConfig {
+func loadTasks(config Config, strict bool) (map[string]*TaskConfig, error) {
 	tasks := make(map[string]*TaskConfig)
-	for _, c := range config.Tasks {
+	for i, c := range config.Tasks {
 		cfg, err := common.NewConfigFrom(c)
 		if err != nil {
+			if strict {
+				return nil, fmt.Errorf("task %d: invalid configuration: %w", i, err)
+			}
 			continue
 		}
 		task, err := NewTaskConfig(config, cfg)
 		if err != nil {
+			if strict {
+				return nil, fmt.Errorf("task %d: %w", i, err)
+			}
 			logp.L.Errorf("load task failed: %v", err)
 			continue
 		}
 
 		tasks[task.ID] = task
 	}
+	return tasks, nil
+}
+
+// GetTasks preserves normal-mode per-task error tolerance.
+func GetTasks(config Config) map[string]*TaskConfig {
+	tasks, _ := getTasks(config, false)
 	return tasks
 }
 
-// GetTasks 根据主配置定义的从配置目录，获取采集器定义的任务列表
-func GetTasks(config Config) map[string]*TaskConfig {
+// GetTasksStrict returns task configuration errors for the direct-read preview
+// path. An empty configuration is not itself an error: an ordinary -T run may
+// intentionally wait for external shutdown, so callers decide whether a
+// zero-task configuration is a valid preview.
+func GetTasksStrict(config Config) (map[string]*TaskConfig, error) {
+	return getTasks(config, true)
+}
+
+func getTasks(config Config, strict bool) (map[string]*TaskConfig, error) {
 	tasks := make(map[string]*TaskConfig)
 
 	for _, v := range config.SecConfigs {
 		pattern := v.Path + "/" + v.Pattern
 		matches, err := filepath.Glob(pattern)
 		if err != nil {
+			if strict {
+				return nil, fmt.Errorf("secondary config pattern %s: %w", pattern, err)
+			}
 			logp.L.Errorf("secondary config pattern %s format error with msg: %v", pattern, err)
 			continue
 		}
@@ -503,28 +525,43 @@ func GetTasks(config Config) map[string]*TaskConfig {
 			// load secondary config
 			secConfRaw, err := beat.LoadFile(path)
 			if err != nil {
+				if strict {
+					return nil, fmt.Errorf("secondary config file %s: %w", path, err)
+				}
 				logp.L.Errorf("secondary config file %s format error with msg: %v", path, err)
 				continue
 			}
 			// get local configs
 			localConfigsRaw, err := secConfRaw.Child("local", -1)
 			if err != nil {
+				if strict {
+					return nil, fmt.Errorf("secondary config file %s: local: %w", path, err)
+				}
 				logp.L.Errorf("Error reading config file: %v", err)
 				continue
 			}
 			n, err := localConfigsRaw.CountField("")
 			if err != nil {
+				if strict {
+					return nil, fmt.Errorf("secondary config file %s: local count: %w", path, err)
+				}
 				logp.L.Errorf("Error reading config file: %v", err)
 				continue
 			}
 			for i := 0; i < n; i++ {
 				localConfigRaw, err := localConfigsRaw.Child("", i)
 				if err != nil {
+					if strict {
+						return nil, fmt.Errorf("secondary config file %s: task %d: %w", path, i, err)
+					}
 					logp.L.Errorf("Error reading config file: %v", err)
 					continue
 				}
 				task, err := NewTaskConfig(config, localConfigRaw)
 				if err != nil {
+					if strict {
+						return nil, fmt.Errorf("secondary config file %s: task %d: %w", path, i, err)
+					}
 					logp.L.Errorf("Error reading config file: %v", err)
 					continue
 				}
@@ -534,11 +571,15 @@ func GetTasks(config Config) map[string]*TaskConfig {
 	}
 
 	// 合并主配置内容
-	for k, v := range loadTasks(config) {
+	localTasks, err := loadTasks(config, strict)
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range localTasks {
 		tasks[k] = v
 	}
 
-	return tasks
+	return tasks, nil
 }
 
 // initTaskConfig: 任务配置初始化

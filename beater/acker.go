@@ -23,6 +23,7 @@
 package beater
 
 import (
+	libgsebeat "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	"github.com/elastic/beats/filebeat/input/file"
 )
@@ -55,4 +56,9 @@ func AckEvents(data []interface{}) {
 	if stateless > 0 {
 		logp.L.Debugw("stateless ack", "count", stateless)
 	}
+
+	// The preview in-flight counter is retired here, after every Registrar
+	// state update from this batch has been handed to the Registrar channel.
+	// The call is a no-op unless libgse managed preview is enabled.
+	libgsebeat.PublishAck(len(data))
 }

@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
 	bkmonitoring "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/monitoring"
 	filebeatinput "github.com/elastic/beats/filebeat/input"
@@ -67,6 +68,16 @@ type Manager struct {
 	// startTaskFunc 仅供测试注入任务启动错误，生产路径为 nil。
 	startTaskFunc func(*cfg.TaskConfig, []file.State) error
 
+	// -T direct-read preview coordination. previewDone is created only after
+	// the single preview task has been validated and managed mode is enabled.
+	preview              bool
+	previewTaskID        string
+	previewDone          chan struct{}
+	previewErr           error
+	previewMu            sync.Mutex
+	previewOnce          sync.Once
+	enableManagedPreview func() error
+
 	// 自适应扫描控制器由 Manager 独占管理；配置锁保证并发 Reload 时只会有一条替换链路。
 	adaptiveScan             *utils.AdaptiveScanController
 	adaptiveScanConfig       cfg.AdaptiveScanConfig
@@ -89,6 +100,7 @@ func NewManager(config cfg.Config, beatDone chan struct{}) (*Manager, error) {
 		tasks:                    make(map[string]*task.Task),
 		setAdaptiveScanHooksFunc: filebeatinput.SetAdaptiveScanHooks,
 		isTestMode:               testModeEnabled,
+		enableManagedPreview:     beat.EnableManagedPreview,
 	}
 
 	return m, nil
@@ -106,7 +118,21 @@ func (m *Manager) Start() error {
 
 	// Task
 	lastStates := registrar.ResetStates(Registrar.GetStates())
-	tasks := cfg.GetTasks(m.config)
+	var tasks map[string]*cfg.TaskConfig
+	if m.testMode() && hasEnabledDirectReadIntent(m.config) {
+		tasks, err = cfg.GetTasksStrict(m.config)
+		if err != nil {
+			return fmt.Errorf("loading preview tasks: %w", err)
+		}
+	} else {
+		tasks = cfg.GetTasks(m.config)
+	}
+	if m.testMode() && len(tasks) == 0 {
+		logp.L.Warnf("-T loaded no tasks; waiting for an external shutdown")
+	}
+	if err = m.preparePreview(tasks); err != nil {
+		return err
+	}
 	startTask := m.startTask
 	if m.startTaskFunc != nil {
 		startTask = m.startTaskFunc
@@ -145,6 +171,10 @@ func (m *Manager) Stop() error {
 
 // Reload diff config, create, remove, update jobs
 func (m *Manager) Reload(config cfg.Config) {
+	if m.preview {
+		logp.L.Info("ignoring reload during managed preview")
+		return
+	}
 	logp.L.Infof("[Reload]update config, current tasks=>%d", len(m.tasks))
 
 	utils.SetResourceLimit(config.MaxCpuLimit, config.CpuCheckTimes)
@@ -285,12 +315,18 @@ func (m *Manager) startTask(config *cfg.TaskConfig, lastStates []file.State) err
 	if _, ok := m.tasks[config.ID]; ok {
 		return fmt.Errorf("task with same ID already exists: %s", config.ID)
 	}
+	if err := m.validateDirectTask(config); err != nil {
+		return err
+	}
 	var err error
 	taskInst, err := task.NewTask(config, m.beatDone, lastStates)
 	if err != nil {
 		logp.L.Errorf("start task err, taskid=>%s err=>%v", config.ID, err)
 		taskError.Add(1)
 		return err
+	}
+	if m.preview && config.ID == m.previewTaskID {
+		taskInst.SetPreviewCompletion(m.notifyPreviewDone)
 	}
 	taskInst.Start()
 
