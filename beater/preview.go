@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"time"
 
 	libgsebeat "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
@@ -37,6 +38,9 @@ var (
 	// stopPublish is a test seam for the forced publisher disconnect that
 	// releases a Task or Sender goroutine blocked inside Publish.
 	stopPublish = libgsebeat.StopPublish
+	// stopManager is a test seam for the Manager.Stop join launched by
+	// startManagerStop. Production always stops the real Manager.
+	stopManager = func(m *Manager) error { return m.Stop() }
 )
 
 // errPreviewFinalizeTimeout is the terminal reason when the shared shutdown
@@ -194,6 +198,12 @@ func (m *Manager) preparePreview(tasks map[string]*cfg.TaskConfig) error {
 	m.previewDone = nil
 	m.previewInputDone = nil
 	m.previewErr = nil
+	// The notification guards belong to one preview generation: preparePreview
+	// replaces them together with the channels so a re-entered preview can
+	// signal its new channels again. Pointers are used because copying a
+	// sync.Once value is rejected by vet's copylocks check.
+	m.previewOnce = &sync.Once{}
+	m.previewInputOnce = &sync.Once{}
 
 	var directTaskIDs []string
 	for taskID, taskConfig := range tasks {
@@ -267,7 +277,11 @@ func (m *Manager) validateDirectTask(config *cfg.TaskConfig) error {
 }
 
 func (m *Manager) notifyPreviewDone(err error) {
-	m.previewOnce.Do(func() {
+	once := m.previewOnce
+	if once == nil {
+		return
+	}
+	once.Do(func() {
 		// The marker cannot arrive before the finite input completed. Making the
 		// input signal idempotently fire here as well guarantees the coordinator
 		// has a budget even if the completion notification raced with teardown.
@@ -290,7 +304,11 @@ func (m *Manager) notifyPreviewInputDone() {
 	if m.previewInputDone == nil {
 		return
 	}
-	m.previewInputOnce.Do(func() {
+	once := m.previewInputOnce
+	if once == nil {
+		return
+	}
+	once.Do(func() {
 		close(m.previewInputDone)
 	})
 }

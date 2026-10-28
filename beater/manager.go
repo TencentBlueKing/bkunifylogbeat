@@ -73,14 +73,18 @@ type Manager struct {
 	// previewInputDone is closed when the finite input stopped producing, before
 	// the drain marker is injected, so the shutdown budget covers the marker
 	// traversal itself.
-	preview              bool
-	previewTaskID        string
-	previewDone          chan struct{}
-	previewInputDone     chan struct{}
-	previewErr           error
-	previewMu            sync.Mutex
-	previewOnce          sync.Once
-	previewInputOnce     sync.Once
+	preview          bool
+	previewTaskID    string
+	previewDone      chan struct{}
+	previewInputDone chan struct{}
+	previewErr       error
+	previewMu        sync.Mutex
+	// previewOnce/previewInputOnce guard the completion notifications of one
+	// preview generation. They are pointers so preparePreview can re-arm them
+	// together with the channels when a preview is re-entered; copying a
+	// sync.Once value would also trip vet's copylocks check.
+	previewOnce          *sync.Once
+	previewInputOnce     *sync.Once
 	enableManagedPreview func() error
 
 	// 自适应扫描控制器由 Manager 独占管理；配置锁保证并发 Reload 时只会有一条替换链路。

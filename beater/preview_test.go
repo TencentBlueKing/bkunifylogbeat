@@ -9,6 +9,7 @@ package beater
 
 import (
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -137,6 +138,40 @@ func TestPreparePreviewValidatesDirectRead(t *testing.T) {
 	})
 }
 
+// TestPreparePreviewRearmsNotifications verifies that a re-entered preview gets
+// fresh completion latches. preparePreview replaces both the channels and the
+// Once guards, so the second generation can still close its own channels;
+// without re-arming, the already fired sync.Once would leave them open forever.
+func TestPreparePreviewRearmsNotifications(t *testing.T) {
+	enabled := true
+	manager := newPreviewManager(true, nil)
+	task := newTaskConfigForPreview(t, "kafka", &enabled)
+	tasks := map[string]*cfg.TaskConfig{task.ID: task}
+
+	require.NoError(t, manager.preparePreview(tasks))
+	firstDone, firstInput := manager.PreviewDone(), manager.PreviewInputDone()
+	manager.notifyPreviewInputDone()
+	manager.notifyPreviewDone(nil)
+	require.True(t, isClosedForTest(firstDone))
+	require.True(t, isClosedForTest(firstInput))
+
+	// Re-enter the preview: new channels must not inherit the fired guards.
+	require.NoError(t, manager.preparePreview(tasks))
+	secondDone, secondInput := manager.PreviewDone(), manager.PreviewInputDone()
+	require.NotNil(t, secondDone)
+	require.NotNil(t, secondInput)
+	require.False(t, isClosedForTest(secondDone), "second preview inherited a closed done channel")
+	require.False(t, isClosedForTest(secondInput), "second preview inherited a closed input channel")
+
+	manager.notifyPreviewInputDone()
+	require.True(t, isClosedForTest(secondInput), "re-armed input notification did not fire")
+
+	secondErr := errors.New("second preview failed")
+	manager.notifyPreviewDone(secondErr)
+	require.True(t, isClosedForTest(secondDone), "re-armed done notification did not fire")
+	require.ErrorIs(t, manager.PreviewErr(), secondErr)
+}
+
 func TestValidateDirectTaskOnReloadPath(t *testing.T) {
 	enabled := true
 	task := newTaskConfigForPreview(t, "kafka", &enabled)
@@ -161,6 +196,7 @@ func TestPreviewDoneNotifiesOnce(t *testing.T) {
 	manager := &Manager{
 		preview:     true,
 		previewDone: make(chan struct{}),
+		previewOnce: &sync.Once{},
 	}
 
 	first := errors.New("first")
@@ -189,6 +225,13 @@ func withStopPublish(t *testing.T, fn func()) {
 	t.Cleanup(func() { stopPublish = old })
 }
 
+func withStopManager(t *testing.T, fn func(*Manager) error) {
+	t.Helper()
+	old := stopManager
+	stopManager = fn
+	t.Cleanup(func() { stopManager = old })
+}
+
 func withPreviewTimeouts(t *testing.T, finalize, stop time.Duration) {
 	t.Helper()
 	oldFinalize, oldStop := previewFinalizeTimeout, previewStopTimeout
@@ -202,7 +245,7 @@ func newPreviewBudget(timeout time.Duration) *previewFinalizeBudget {
 	return newPreviewFinalizeBudget(timeout)
 }
 
-func isClosedForTest(ch chan struct{}) bool {
+func isClosedForTest(ch <-chan struct{}) bool {
 	select {
 	case <-ch:
 		return true

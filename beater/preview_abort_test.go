@@ -9,12 +9,12 @@ package beater
 
 import (
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	libgsebeat "github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
-	filebeatinput "github.com/elastic/beats/filebeat/input"
 	"github.com/elastic/beats/filebeat/input/file"
 	"github.com/stretchr/testify/require"
 
@@ -25,6 +25,7 @@ func TestManagerPreviewInputDoneNotifiesOnce(t *testing.T) {
 	manager := &Manager{
 		preview:          true,
 		previewInputDone: make(chan struct{}),
+		previewInputOnce: &sync.Once{},
 	}
 
 	manager.notifyPreviewInputDone()
@@ -39,29 +40,44 @@ func TestManagerPreviewInputDoneNotifiesOnce(t *testing.T) {
 
 // TestAbortPreviewReleasesPublisherBeforeManagerStop reproduces the blocking
 // chain from the review: a Task is stuck inside Publish, so Manager.Stop cannot
-// join it until the publisher is disconnected. The abort path must release the
-// publisher first and then return promptly.
+// join it until the publisher is disconnected. The stop manager seam only
+// returns after stopPublish ran, so a reversed order records managerStop first
+// (and then busts the stop budget) instead of passing on the elapsed bound
+// alone.
 func TestAbortPreviewReleasesPublisherBeforeManagerStop(t *testing.T) {
 	withPreviewTimeouts(t, time.Second, 500*time.Millisecond)
 
-	publisherBlocked := make(chan struct{})
-	release := make(chan struct{})
+	publisherReleased := make(chan struct{})
 	var releaseCalls atomic.Int32
+	var orderMu sync.Mutex
+	var order []string
+	record := func(event string) {
+		orderMu.Lock()
+		order = append(order, event)
+		orderMu.Unlock()
+	}
+
 	withStopPublish(t, func() {
+		record("stopPublish")
 		releaseCalls.Add(1)
-		close(release)
+		close(publisherReleased)
 	})
 
-	manager := &Manager{setAdaptiveScanHooksFunc: func(filebeatinput.AdaptiveScanHooks) {}}
-	manager.wg.Add(1)
-	go func() {
-		close(publisherBlocked)
-		<-release
-		manager.wg.Done()
-	}()
-	<-publisherBlocked
+	// cleanupRelease unblocks a stop manager seam that is still waiting when
+	// the test fails; the expected order returns as soon as publish is out.
+	cleanupRelease := make(chan struct{})
+	withStopManager(t, func(*Manager) error {
+		record("managerStop")
+		select {
+		case <-publisherReleased:
+			return nil
+		case <-cleanupRelease:
+			return nil
+		}
+	})
+	t.Cleanup(func() { close(cleanupRelease) })
 
-	bt := &LogBeat{done: make(chan struct{}), manager: manager}
+	bt := &LogBeat{done: make(chan struct{}), manager: &Manager{}}
 
 	start := time.Now()
 	err := bt.abortPreview(errors.New("console output is blocked"))
@@ -69,6 +85,13 @@ func TestAbortPreviewReleasesPublisherBeforeManagerStop(t *testing.T) {
 
 	require.ErrorContains(t, err, "console output is blocked")
 	require.Equal(t, int32(1), releaseCalls.Load(), "abort must release the publisher exactly once")
+
+	orderMu.Lock()
+	gotOrder := append([]string(nil), order...)
+	orderMu.Unlock()
+	require.Equal(t, []string{"stopPublish", "managerStop"}, gotOrder,
+		"abort must release the publisher before joining Manager.Stop")
+
 	require.Less(t, elapsed, time.Second, "abort must not wait for the blocked publisher")
 	require.True(t, isClosedForTest(bt.done), "abort must release the beater done channel")
 }
@@ -79,10 +102,14 @@ func TestAbortPreviewReturnsWhenManagerStopStaysBlocked(t *testing.T) {
 	withPreviewTimeouts(t, time.Second, 50*time.Millisecond)
 	withStopPublish(t, func() {})
 
-	manager := &Manager{setAdaptiveScanHooksFunc: func(filebeatinput.AdaptiveScanHooks) {}}
-	manager.wg.Add(1) // never released: simulates a Task that never exits
+	releaseManager := make(chan struct{})
+	withStopManager(t, func(*Manager) error {
+		<-releaseManager
+		return nil
+	})
+	t.Cleanup(func() { close(releaseManager) })
 
-	bt := &LogBeat{done: make(chan struct{}), manager: manager}
+	bt := &LogBeat{done: make(chan struct{}), manager: &Manager{}}
 
 	start := time.Now()
 	err := bt.abortPreview(errPreviewFinalizeTimeout)
@@ -92,6 +119,48 @@ func TestAbortPreviewReturnsWhenManagerStopStaysBlocked(t *testing.T) {
 	require.GreaterOrEqual(t, elapsed, 50*time.Millisecond)
 	require.Less(t, elapsed, time.Second, "abort must bound Manager.Stop")
 	require.True(t, isClosedForTest(bt.done))
+}
+
+// TestFinishPreviewStopTimeoutKeepsStopBounded covers the drained-preview path:
+// when Manager.Stop exceeds the preview stop budget, finishPreview must mark the
+// beat aborted so a later bt.Stop from the framework signal path cannot wait for
+// the same stuck Manager.Stop without a bound.
+func TestFinishPreviewStopTimeoutKeepsStopBounded(t *testing.T) {
+	withPreviewTimeouts(t, 200*time.Millisecond, 40*time.Millisecond)
+	withWaitPublishIdle(t, func(time.Duration) error { return nil })
+
+	releaseManager := make(chan struct{})
+	withStopManager(t, func(*Manager) error {
+		<-releaseManager
+		return nil
+	})
+	t.Cleanup(func() { close(releaseManager) })
+
+	bt := &LogBeat{done: make(chan struct{}), manager: &Manager{}}
+
+	start := time.Now()
+	err := bt.finishPreview(nil, newPreviewBudget(200*time.Millisecond))
+	elapsed := time.Since(start)
+
+	require.ErrorContains(t, err, "did not stop")
+	require.True(t, bt.aborted.Load(), "a bounded stop timeout must mark the beat aborted")
+	require.GreaterOrEqual(t, elapsed, 40*time.Millisecond)
+	require.Less(t, elapsed, time.Second)
+	require.True(t, isClosedForTest(bt.done))
+
+	// Any later Stop must return immediately instead of joining the stuck
+	// Manager.Stop a second time. Without the aborted flag this blocks until the
+	// cleanup releases the seam.
+	stopped := make(chan struct{})
+	go func() {
+		bt.Stop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("Stop must stay bounded after the preview stop timeout")
+	}
 }
 
 // TestFinishPreviewAbortsWhenAckDrainExceedsBudget verifies that the shutdown

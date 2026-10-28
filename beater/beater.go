@@ -302,6 +302,10 @@ func (bt *LogBeat) finishPreview(err error, budget *previewFinalizeBudget) error
 	}
 
 	if !bt.stopManagerBounded(previewStopTimeout) {
+		// Manager.Stop is still running (a Task is stuck). Mark the beat as
+		// aborted so a later Stop from the framework signal path does not wait
+		// for the same Manager.Stop again without a bound.
+		bt.aborted.Store(true)
 		logp.L.Errorf("preview shutdown: manager did not stop within %s after drain", previewStopTimeout)
 		if err == nil {
 			err = fmt.Errorf("manager did not stop within %s after preview drain", previewStopTimeout)
@@ -371,10 +375,15 @@ func (bt *LogBeat) startManagerStop() <-chan struct{} {
 	bt.managerStopOnce.Do(func() {
 		stopped := make(chan struct{})
 		bt.managerStopped = stopped
+		// Snapshot the seam and the manager before the goroutine starts: the
+		// stop implementation must not be read concurrently with a test seam
+		// restoration, and Manager.Stop may block forever on a stuck Task.
+		stop := stopManager
+		manager := bt.manager
 		go func() {
 			defer close(stopped)
-			if bt.manager != nil {
-				_ = bt.manager.Stop()
+			if manager != nil {
+				_ = stop(manager)
 			}
 		}()
 	})
