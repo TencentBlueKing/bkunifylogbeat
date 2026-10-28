@@ -84,6 +84,16 @@ func (f *fakeCompletionSource) CompletionErr() error {
 	return f.err
 }
 
+type unsupportedCompletionSource struct{}
+
+func (*unsupportedCompletionSource) Completion() (<-chan struct{}, bool) {
+	return nil, false
+}
+
+func (*unsupportedCompletionSource) CompletionErr() error {
+	return nil
+}
+
 func TestWatchCompletionInjectsDrainMarker(t *testing.T) {
 	node := base.NewEmptyNode("input-a")
 	source := &fakeCompletionSource{completion: make(chan struct{})}
@@ -94,7 +104,7 @@ func TestWatchCompletionInjectsDrainMarker(t *testing.T) {
 	in.AddTaskNode(filter, &base.TaskNode{Node: base.NewEmptyNode("task-a")})
 
 	go in.Run()
-	in.WatchCompletion("task-a")
+	in.WatchCompletion("task-a", nil)
 	close(source.completion)
 
 	select {
@@ -111,5 +121,73 @@ func TestWatchCompletionInjectsDrainMarker(t *testing.T) {
 	case <-node.GameOver:
 	case <-time.After(time.Second):
 		t.Fatal("input did not stop")
+	}
+}
+
+// TestWatchCompletionNotifiesBeforeDrainDelivery covers the blocking chain:
+// the coordinator must learn that the finite input completed even when the
+// drain marker cannot be delivered because the downstream pipeline is blocked.
+// Run is intentionally not started, so enqueueDrain cannot complete.
+func TestWatchCompletionNotifiesBeforeDrainDelivery(t *testing.T) {
+	node := base.NewEmptyNode("input-a")
+	source := &fakeCompletionSource{completion: make(chan struct{})}
+	in := &Input{Node: node, completionSource: source}
+
+	notified := make(chan struct{})
+	in.WatchCompletion("task-a", func() { close(notified) })
+	close(source.completion)
+
+	select {
+	case <-notified:
+	case <-time.After(time.Second):
+		t.Fatal("completion notification waited for the blocked drain marker")
+	}
+
+	// Release the goroutine blocked in enqueueDrain.
+	close(node.End)
+}
+
+// TestWatchCompletionReportsUnsupportedSource verifies the fallback: an input
+// without a completion signal must not leave the preview waiting forever.
+func TestWatchCompletionReportsUnsupportedSource(t *testing.T) {
+	for name, source := range map[string]completionSource{
+		"nil source":         nil,
+		"unsupported source": &unsupportedCompletionSource{},
+	} {
+		t.Run(name, func(t *testing.T) {
+			node := base.NewEmptyNode("input-a")
+			in := &Input{Node: node, completionSource: source}
+
+			filter := base.NewEmptyNode("filter-a")
+			in.AddOutput(filter)
+			in.AddTaskNode(filter, &base.TaskNode{Node: base.NewEmptyNode("task-a")})
+			go in.Run()
+
+			notified := make(chan struct{})
+			in.WatchCompletion("task-a", func() { close(notified) })
+
+			select {
+			case <-notified:
+			case <-time.After(time.Second):
+				t.Fatal("input completion notification was not fired for an unsupported source")
+			}
+
+			select {
+			case raw := <-filter.In:
+				marker, ok := raw.(*base.DrainMarker)
+				require.True(t, ok, "fallback must inject a DrainMarker")
+				assert.Equal(t, "task-a", marker.TaskID)
+				require.Error(t, marker.Err)
+			case <-time.After(time.Second):
+				t.Fatal("fallback drain marker was not injected")
+			}
+
+			close(node.End)
+			select {
+			case <-node.GameOver:
+			case <-time.After(time.Second):
+				t.Fatal("input did not stop")
+			}
+		})
 	}
 }

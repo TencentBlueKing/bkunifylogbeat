@@ -23,6 +23,7 @@
 package input
 
 import (
+	"errors"
 	"sync"
 	"time"
 
@@ -172,28 +173,50 @@ func (in *Input) Start() {
 	})
 }
 
-// WatchCompletion starts one goroutine for a finite input. When the Runner
-// reports completion, the marker is injected into the same Input.In channel
-// only after the last OnEvent call has returned. The marker then travels
-// through the normal Filter/Processor/Sender/Task chain.
-func (in *Input) WatchCompletion(taskID string) {
+// WatchCompletion starts one goroutine for a finite input. notify, when not
+// nil, runs as soon as the Runner reports completion, before the drain marker
+// is enqueued: the preview coordinator must start its shutdown budget even when
+// a blocked output keeps the marker from reaching the Task.
+//
+// The marker is injected into the same Input.In channel only after the last
+// OnEvent call has returned, then travels through the normal
+// Filter/Processor/Sender/Task chain. An input without a completion signal
+// injects an error marker instead of leaving the coordinator waiting for a
+// completion that can never arrive.
+func (in *Input) WatchCompletion(taskID string, notify func()) {
 	in.completionOnce.Do(func() {
 		source := in.completionSource
 		if source == nil {
+			in.injectDrainError(taskID, notify, errors.New("preview input is not initialized"))
 			return
 		}
 		completion, ok := source.Completion()
 		if !ok {
+			in.injectDrainError(taskID, notify, errors.New("preview input does not report completion"))
 			return
 		}
 		go func() {
 			<-completion
+			if notify != nil {
+				notify()
+			}
 			in.enqueueDrain(&base.DrainMarker{
 				TaskID: taskID,
 				Err:    source.CompletionErr(),
 			})
 		}()
 	})
+}
+
+// injectDrainError is the fallback for inputs without a completion signal. The
+// shutdown budget still starts immediately and the error travels through the
+// regular drain marker path, so the preview reports a terminal error instead of
+// hanging.
+func (in *Input) injectDrainError(taskID string, notify func(), err error) {
+	if notify != nil {
+		notify()
+	}
+	go in.enqueueDrain(&base.DrainMarker{TaskID: taskID, Err: err})
 }
 
 func (in *Input) enqueueDrain(marker *base.DrainMarker) {

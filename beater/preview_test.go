@@ -182,6 +182,35 @@ func withWaitPublishIdle(t *testing.T, fn func(time.Duration) error) {
 	t.Cleanup(func() { waitPublishIdle = old })
 }
 
+func withStopPublish(t *testing.T, fn func()) {
+	t.Helper()
+	old := stopPublish
+	stopPublish = fn
+	t.Cleanup(func() { stopPublish = old })
+}
+
+func withPreviewTimeouts(t *testing.T, finalize, stop time.Duration) {
+	t.Helper()
+	oldFinalize, oldStop := previewFinalizeTimeout, previewStopTimeout
+	previewFinalizeTimeout, previewStopTimeout = finalize, stop
+	t.Cleanup(func() {
+		previewFinalizeTimeout, previewStopTimeout = oldFinalize, oldStop
+	})
+}
+
+func newPreviewBudget(timeout time.Duration) *previewFinalizeBudget {
+	return newPreviewFinalizeBudget(timeout)
+}
+
+func isClosedForTest(ch chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
+}
+
 func newFinishTestLogBeat(previewDone chan struct{}) *LogBeat {
 	manager := &Manager{preview: true, previewDone: previewDone, previewTaskID: "task-1"}
 	return &LogBeat{
@@ -191,51 +220,55 @@ func newFinishTestLogBeat(previewDone chan struct{}) *LogBeat {
 }
 
 func TestFinishPreviewWaitsForPublishedEvents(t *testing.T) {
-	oldDrain := previewDrainTimeout
-	previewDrainTimeout = 100 * time.Millisecond
-	t.Cleanup(func() { previewDrainTimeout = oldDrain })
+	withPreviewTimeouts(t, 200*time.Millisecond, time.Second)
 
 	t.Run("success", func(t *testing.T) {
 		withWaitPublishIdle(t, func(time.Duration) error { return nil })
 		bt := newFinishTestLogBeat(make(chan struct{}))
-		require.NoError(t, bt.finishPreview(nil))
+		require.NoError(t, bt.finishPreview(nil, newPreviewBudget(200*time.Millisecond)))
 	})
 
 	t.Run("wait error becomes terminal error", func(t *testing.T) {
 		expected := errors.New("console flush failed")
 		withWaitPublishIdle(t, func(time.Duration) error { return expected })
 		bt := newFinishTestLogBeat(make(chan struct{}))
-		require.ErrorIs(t, bt.finishPreview(nil), expected)
+		require.ErrorIs(t, bt.finishPreview(nil, newPreviewBudget(200*time.Millisecond)), expected)
 	})
 
 	t.Run("kafka error is preserved over wait result", func(t *testing.T) {
 		expected := errors.New("kafka read failed")
 		withWaitPublishIdle(t, func(time.Duration) error { return errors.New("drain failed") })
 		bt := newFinishTestLogBeat(make(chan struct{}))
-		require.ErrorIs(t, bt.finishPreview(expected), expected)
+		require.ErrorIs(t, bt.finishPreview(expected, newPreviewBudget(200*time.Millisecond)), expected)
 	})
 }
 
 func TestFinishPreviewAfterSignal(t *testing.T) {
-	oldSignal := previewSignalTimeout
-	previewSignalTimeout = 50 * time.Millisecond
-	t.Cleanup(func() { previewSignalTimeout = oldSignal })
+	withPreviewTimeouts(t, time.Second, 200*time.Millisecond)
 
 	t.Run("signal is a failure even after a clean drain", func(t *testing.T) {
 		withWaitPublishIdle(t, func(time.Duration) error { return nil })
 		done := make(chan struct{})
 		close(done)
 		bt := newFinishTestLogBeat(done)
-		err := bt.finishPreviewAfterSignal()
+		err := bt.finishPreviewAfterSignal(newPreviewBudget(time.Second))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "canceled by shutdown signal")
 	})
 
-	t.Run("signal wait timeout does not report success", func(t *testing.T) {
+	t.Run("signal wait timeout aborts instead of hanging", func(t *testing.T) {
+		publishReleased := false
+		withStopPublish(t, func() { publishReleased = true })
 		withWaitPublishIdle(t, func(time.Duration) error { return nil })
 		bt := newFinishTestLogBeat(make(chan struct{}))
-		err := bt.finishPreviewAfterSignal()
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "did not finish after shutdown signal")
+
+		start := time.Now()
+		err := bt.finishPreviewAfterSignal(newPreviewBudget(50 * time.Millisecond))
+		elapsed := time.Since(start)
+
+		require.ErrorContains(t, err, "did not drain after shutdown signal")
+		require.True(t, publishReleased, "abort must release the publisher")
+		require.Less(t, elapsed, time.Second, "signal timeout must not block Run")
+		require.True(t, isClosedForTest(bt.done), "done must be released on abort")
 	})
 }

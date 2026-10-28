@@ -8,6 +8,7 @@
 package beater
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -20,17 +21,70 @@ import (
 )
 
 var (
-	// previewDrainTimeout bounds the wait for ACKs and console flush after the
-	// Task pipeline has been drained. It is a failure bound, not a success
-	// condition; tests override it.
-	previewDrainTimeout = 5 * time.Second
-	// previewSignalTimeout bounds how long a shutdown signal waits for the
-	// Kafka input to stop and the drain marker to reach the Task.
-	previewSignalTimeout = 15 * time.Second
+	// previewFinalizeTimeout is the fixed finalization budget. It starts at
+	// whichever happens first: the finite input reporting completion, or a
+	// shutdown signal. The same window covers waiting for the drain marker and
+	// waiting for ACKs/console flush, so a late signal cannot extend shutdown.
+	previewFinalizeTimeout = 10 * time.Second
+	// previewStopTimeout bounds Manager.Stop after the drain completed or the
+	// finalization budget expired. Manager.Stop joins the Task goroutines and
+	// can still block when an output worker is stuck, but Run must always return
+	// so Registrar.Stop and beat.Stop can release the Storage.
+	previewStopTimeout = 5 * time.Second
 
 	// waitPublishIdle is a test seam for the final ACK/console drain wait.
 	waitPublishIdle = libgsebeat.WaitPublishIdle
+	// stopPublish is a test seam for the forced publisher disconnect that
+	// releases a Task or Sender goroutine blocked inside Publish.
+	stopPublish = libgsebeat.StopPublish
 )
+
+// errPreviewFinalizeTimeout is the terminal reason when the shared shutdown
+// budget expires before the drain marker and the ACK drain are complete.
+var errPreviewFinalizeTimeout = errors.New("preview finalization budget expired")
+
+// previewFinalizeBudget is the single fixed window shared by the normal
+// completion path and the shutdown-signal path.
+type previewFinalizeBudget struct {
+	timeout  time.Duration
+	deadline time.Time
+	timer    *time.Timer
+	started  bool
+}
+
+func newPreviewFinalizeBudget(timeout time.Duration) *previewFinalizeBudget {
+	return &previewFinalizeBudget{timeout: timeout}
+}
+
+// start arms the budget on first use and returns its expiry channel. Repeated
+// calls return the same channel and never extend the deadline.
+func (b *previewFinalizeBudget) start() <-chan time.Time {
+	if b.timer == nil {
+		b.started = true
+		b.deadline = time.Now().Add(b.timeout)
+		b.timer = time.NewTimer(b.timeout)
+	}
+	return b.timer.C
+}
+
+// remaining reports the part of the budget that is still available. Before the
+// budget is armed it reports the full timeout.
+func (b *previewFinalizeBudget) remaining() time.Duration {
+	if !b.started {
+		return b.timeout
+	}
+	return time.Until(b.deadline)
+}
+
+func (b *previewFinalizeBudget) expired() bool {
+	return b.started && !time.Now().Before(b.deadline)
+}
+
+func (b *previewFinalizeBudget) stop() {
+	if b.timer != nil {
+		b.timer.Stop()
+	}
+}
 
 type directReadPresence struct {
 	Present bool
@@ -138,6 +192,7 @@ func (m *Manager) preparePreview(tasks map[string]*cfg.TaskConfig) error {
 	m.preview = false
 	m.previewTaskID = ""
 	m.previewDone = nil
+	m.previewInputDone = nil
 	m.previewErr = nil
 
 	var directTaskIDs []string
@@ -178,6 +233,7 @@ func (m *Manager) preparePreview(tasks map[string]*cfg.TaskConfig) error {
 	m.preview = true
 	m.previewTaskID = directTaskIDs[0]
 	m.previewDone = make(chan struct{})
+	m.previewInputDone = make(chan struct{})
 	logp.L.Infof("preview mode enabled for task %s", m.previewTaskID)
 	return nil
 }
@@ -212,12 +268,30 @@ func (m *Manager) validateDirectTask(config *cfg.TaskConfig) error {
 
 func (m *Manager) notifyPreviewDone(err error) {
 	m.previewOnce.Do(func() {
+		// The marker cannot arrive before the finite input completed. Making the
+		// input signal idempotently fire here as well guarantees the coordinator
+		// has a budget even if the completion notification raced with teardown.
+		m.notifyPreviewInputDone()
+
 		m.previewMu.Lock()
 		m.previewErr = err
 		m.previewMu.Unlock()
 		if m.previewDone != nil {
 			close(m.previewDone)
 		}
+	})
+}
+
+// notifyPreviewInputDone signals that the finite preview input stopped
+// producing and the drain marker is about to be injected. The coordinator
+// starts its fixed shutdown budget here, before the marker can be blocked by an
+// output that stopped consuming.
+func (m *Manager) notifyPreviewInputDone() {
+	if m.previewInputDone == nil {
+		return
+	}
+	m.previewInputOnce.Do(func() {
+		close(m.previewInputDone)
 	})
 }
 
@@ -228,6 +302,16 @@ func (m *Manager) PreviewDone() <-chan struct{} {
 		return nil
 	}
 	return m.previewDone
+}
+
+// PreviewInputDone returns the finite-input completion signal, or nil when the
+// current process is not running a managed direct-read preview. The signal
+// fires before the drain marker is injected.
+func (m *Manager) PreviewInputDone() <-chan struct{} {
+	if !m.preview {
+		return nil
+	}
+	return m.previewInputDone
 }
 
 // PreviewErr returns the terminal Kafka/drain error, or nil on success.

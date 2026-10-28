@@ -70,12 +70,17 @@ type Manager struct {
 
 	// -T direct-read preview coordination. previewDone is created only after
 	// the single preview task has been validated and managed mode is enabled.
+	// previewInputDone is closed when the finite input stopped producing, before
+	// the drain marker is injected, so the shutdown budget covers the marker
+	// traversal itself.
 	preview              bool
 	previewTaskID        string
 	previewDone          chan struct{}
+	previewInputDone     chan struct{}
 	previewErr           error
 	previewMu            sync.Mutex
 	previewOnce          sync.Once
+	previewInputOnce     sync.Once
 	enableManagedPreview func() error
 
 	// 自适应扫描控制器由 Manager 独占管理；配置锁保证并发 Reload 时只会有一条替换链路。
@@ -327,6 +332,7 @@ func (m *Manager) startTask(config *cfg.TaskConfig, lastStates []file.State) err
 	}
 	if m.preview && config.ID == m.previewTaskID {
 		taskInst.SetPreviewCompletion(m.notifyPreviewDone)
+		taskInst.SetPreviewInputCompletion(m.notifyPreviewInputDone)
 	}
 	taskInst.Start()
 

@@ -53,7 +53,12 @@ type Task struct {
 	// previewCompletion is set only for the -T direct-read task. It is called
 	// once after the drain marker reaches the end of the task pipeline.
 	previewCompletion func(error)
-	previewOnce       sync.Once
+	// previewInputCompletion runs when the finite input reports that it stopped
+	// producing, before the drain marker is injected. The coordinator uses it to
+	// start the fixed shutdown budget even if the marker is stuck behind a
+	// blocked output.
+	previewInputCompletion func()
+	previewOnce            sync.Once
 }
 
 // NewTask 生成采集任务实例
@@ -107,6 +112,13 @@ func (task *Task) SetPreviewCompletion(fn func(error)) {
 	task.previewCompletion = fn
 }
 
+// SetPreviewInputCompletion installs the finite-input completion callback. It
+// fires before the drain marker is enqueued, so the coordinator can bound the
+// whole drain even when the marker never reaches the Task.
+func (task *Task) SetPreviewInputCompletion(fn func()) {
+	task.previewInputCompletion = fn
+}
+
 // StopInput asks the input producer to stop without closing the downstream
 // Task nodes. Used by the signal path so the pipeline can still drain.
 func (task *Task) StopInput() {
@@ -120,7 +132,7 @@ func (task *Task) Start() {
 	// 开启输入
 	task.input.Start()
 	if task.previewCompletion != nil {
-		task.input.WatchCompletion(task.Config.ID)
+		task.input.WatchCompletion(task.Config.ID, task.previewInputCompletion)
 	}
 }
 
