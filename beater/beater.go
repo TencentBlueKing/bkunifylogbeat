@@ -190,9 +190,24 @@ func (bt *LogBeat) Run() error {
 	// A nil previewDone keeps every preview branch below disabled.
 	var previewBudget *previewFinalizeBudget
 	var previewDeadline <-chan time.Time
+	// previewWatchdogC is nil outside preview mode, so its select case stays
+	// disabled and non-preview behavior is unchanged.
+	var previewWatchdogC <-chan time.Time
 	if previewDone != nil {
 		previewBudget = newPreviewFinalizeBudget(previewFinalizeTimeout)
 		defer previewBudget.stop()
+
+		// Absolute preview watchdog. It is armed as soon as the preview is known
+		// to be active and does not depend on Runner.Completion: when a Task is
+		// blocked inside OnEvent because the output stopped consuming, completion
+		// never closes, so neither previewInputDone nor previewDone can start a
+		// budget. The watchdog still forces the abort path and makes Run return.
+		watchdogTimeout := bt.manager.PreviewWatchdogTimeout()
+		previewWatchdog := newPreviewWatchdog(watchdogTimeout)
+		defer previewWatchdog.Stop()
+		previewWatchdogC = previewWatchdog.C
+		logp.L.Infof("preview watchdog armed for %s", watchdogTimeout)
+
 		if previewInputDone != nil {
 			// The input may have completed before the loop was entered.
 			select {
@@ -247,6 +262,10 @@ func (bt *LogBeat) Run() error {
 		// Manager.Stop，保证 Run 一定返回。
 		case <-previewDeadline:
 			return bt.abortPreview(errPreviewFinalizeTimeout)
+		// 绝对看门狗到期：Completion 永不到达（例如输出背压让 OnEvent 阻塞），
+		// 完成信号及其收尾预算都无从启动；同样走强制 abort 路径。
+		case <-previewWatchdogC:
+			return bt.abortPreview(errPreviewWatchdogExpired)
 		// The finite Kafka preview finished on its own: the producer has
 		// stopped, the drain marker has traversed the Task pipeline and the
 		// Sender cache has been flushed.

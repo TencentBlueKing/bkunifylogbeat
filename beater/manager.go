@@ -79,6 +79,13 @@ type Manager struct {
 	previewInputDone chan struct{}
 	previewErr       error
 	previewMu        sync.Mutex
+
+	// previewDirectReadTimeout is the parsed direct_read.timeout of the single
+	// preview task. The absolute preview watchdog uses it as its base and adds
+	// the finalization budget. previewDirectReadTimeoutSet distinguishes a
+	// missing value (Beats rejects it when the input starts) from a duration.
+	previewDirectReadTimeout    time.Duration
+	previewDirectReadTimeoutSet bool
 	// previewOnce/previewInputOnce guard the completion notifications of one
 	// preview generation. They are pointers so preparePreview can re-arm them
 	// together with the channels when a preview is re-entered; copying a

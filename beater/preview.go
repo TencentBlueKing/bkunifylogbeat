@@ -41,11 +41,27 @@ var (
 	// stopManager is a test seam for the Manager.Stop join launched by
 	// startManagerStop. Production always stops the real Manager.
 	stopManager = func(m *Manager) error { return m.Stop() }
+	// newPreviewWatchdog is a test seam for the absolute preview watchdog
+	// timer. Production arms a real timer; tests can shorten or observe it.
+	newPreviewWatchdog = func(timeout time.Duration) *time.Timer { return time.NewTimer(timeout) }
 )
+
+// directReadMaxTimeoutFallback mirrors the maximum direct_read.timeout accepted
+// by the Beats Kafka input. It is only used when a preview task cannot be
+// parsed into a usable timeout, so a malformed preview task is still bounded by
+// the largest supported reader lifetime instead of silently disabling the
+// watchdog.
+const directReadMaxTimeoutFallback = 60 * time.Second
 
 // errPreviewFinalizeTimeout is the terminal reason when the shared shutdown
 // budget expires before the drain marker and the ACK drain are complete.
 var errPreviewFinalizeTimeout = errors.New("preview finalization budget expired")
+
+// errPreviewWatchdogExpired is the terminal reason when the absolute preview
+// watchdog fires. It means neither the finite input completion nor the preview
+// completion arrived before direct_read.timeout plus the finalization budget,
+// typically because a Task is blocked inside OnEvent by output backpressure.
+var errPreviewWatchdogExpired = errors.New("preview watchdog expired before completion")
 
 // previewFinalizeBudget is the single fixed window shared by the normal
 // completion path and the shutdown-signal path.
@@ -93,6 +109,11 @@ func (b *previewFinalizeBudget) stop() {
 type directReadPresence struct {
 	Present bool
 	Enabled bool
+	// Timeout is the configured direct_read.timeout when HasTimeout is true.
+	// Beats requires it for an enabled direct_read block; it bounds the finite
+	// reader and is the base of the absolute preview watchdog.
+	Timeout    time.Duration
+	HasTimeout bool
 }
 
 // inspectDirectRead inspects the task's raw config. The direct_read field is
@@ -108,12 +129,19 @@ func inspectDirectRead(config *cfg.TaskConfig) (directReadPresence, error) {
 		return directReadPresence{}, fmt.Errorf("reading direct_read config: %w", err)
 	}
 	var raw struct {
-		Enabled bool `config:"enabled"`
+		Enabled bool           `config:"enabled"`
+		Timeout *time.Duration `config:"timeout"`
 	}
 	if err := child.Unpack(&raw); err != nil {
-		return directReadPresence{}, fmt.Errorf("reading direct_read.enabled: %w", err)
+		return directReadPresence{}, fmt.Errorf("reading direct_read config: %w", err)
 	}
-	return directReadPresence{Present: true, Enabled: raw.Enabled}, nil
+
+	presence := directReadPresence{Present: true, Enabled: raw.Enabled}
+	if raw.Timeout != nil {
+		presence.Timeout = *raw.Timeout
+		presence.HasTimeout = true
+	}
+	return presence, nil
 }
 
 func (m *Manager) testMode() bool {
@@ -198,6 +226,8 @@ func (m *Manager) preparePreview(tasks map[string]*cfg.TaskConfig) error {
 	m.previewDone = nil
 	m.previewInputDone = nil
 	m.previewErr = nil
+	m.previewDirectReadTimeout = 0
+	m.previewDirectReadTimeoutSet = false
 	// The notification guards belong to one preview generation: preparePreview
 	// replaces them together with the channels so a re-entered preview can
 	// signal its new channels again. Pointers are used because copying a
@@ -206,6 +236,8 @@ func (m *Manager) preparePreview(tasks map[string]*cfg.TaskConfig) error {
 	m.previewInputOnce = &sync.Once{}
 
 	var directTaskIDs []string
+	var directReadTimeout time.Duration
+	var directReadTimeoutSet bool
 	for taskID, taskConfig := range tasks {
 		presence, err := inspectDirectRead(taskConfig)
 		if err != nil {
@@ -224,6 +256,8 @@ func (m *Manager) preparePreview(tasks map[string]*cfg.TaskConfig) error {
 			continue
 		}
 		directTaskIDs = append(directTaskIDs, taskID)
+		directReadTimeout = presence.Timeout
+		directReadTimeoutSet = presence.HasTimeout
 	}
 
 	if len(directTaskIDs) == 0 {
@@ -242,6 +276,8 @@ func (m *Manager) preparePreview(tasks map[string]*cfg.TaskConfig) error {
 
 	m.preview = true
 	m.previewTaskID = directTaskIDs[0]
+	m.previewDirectReadTimeout = directReadTimeout
+	m.previewDirectReadTimeoutSet = directReadTimeoutSet
 	m.previewDone = make(chan struct{})
 	m.previewInputDone = make(chan struct{})
 	logp.L.Infof("preview mode enabled for task %s", m.previewTaskID)
@@ -349,4 +385,28 @@ func (m *Manager) StopPreviewInputs() {
 		logp.L.Infof("stopping preview input for task %s", m.previewTaskID)
 		previewTask.StopInput()
 	}
+}
+
+// PreviewWatchdogTimeout returns the absolute lifetime of the managed preview:
+// the finite reader's own direct_read.timeout plus the shared finalization
+// budget. It deliberately does not depend on Runner.Completion, so a Task
+// blocked inside OnEvent (output backpressure) still cannot keep the process
+// alive past this bound.
+//
+// The fallback covers a preview task whose direct_read.timeout could not be
+// parsed (Beats rejects that configuration when the input starts): the preview
+// is then bounded by the maximum supported reader timeout plus the finalization
+// budget instead of disabling the watchdog.
+func (m *Manager) PreviewWatchdogTimeout() time.Duration {
+	if !m.preview {
+		return 0
+	}
+
+	timeout := m.previewDirectReadTimeout
+	if !m.previewDirectReadTimeoutSet || timeout <= 0 {
+		logp.L.Warnf("preview task has no usable direct_read.timeout; watchdog uses the maximum supported timeout %s",
+			directReadMaxTimeoutFallback)
+		timeout = directReadMaxTimeoutFallback
+	}
+	return timeout + previewFinalizeTimeout
 }
