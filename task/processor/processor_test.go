@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
@@ -355,4 +356,31 @@ func BenchmarkProcessorNodeDataPath(b *testing.B) {
 		require.NoError(b, err)
 		benchmarkNode(b, taskConfig, lines)
 	})
+}
+
+func TestProcessorsDrainMarkerBypassesTransform(t *testing.T) {
+	processors := &Processors{Node: base.NewEmptyNode("processor-drain")}
+	sender := base.NewEmptyNode("sender-drain")
+	processors.AddOutput(sender)
+	processors.AddTaskNode(sender, &base.TaskNode{Node: base.NewEmptyNode("task-drain")})
+
+	go processors.Run()
+	processors.In <- &base.DrainMarker{TaskID: "task-drain"}
+
+	select {
+	case raw := <-sender.In:
+		marker, ok := raw.(*base.DrainMarker)
+		if !ok || marker.TaskID != "task-drain" {
+			t.Fatalf("unexpected marker: %#v", raw)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("drain marker was consumed by the processor")
+	}
+
+	close(processors.End)
+	select {
+	case <-processors.GameOver:
+	case <-time.After(time.Second):
+		t.Fatal("processor did not stop")
+	}
 }

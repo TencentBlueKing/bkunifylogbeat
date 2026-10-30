@@ -23,6 +23,7 @@
 package input
 
 import (
+	"errors"
 	"sync"
 	"time"
 
@@ -119,6 +120,7 @@ func NewInput(
 		return nil, err
 	}
 	// Runner 创建后才有进程内唯一 AdaptiveScanID，元数据必须以该实例 ID 注册。
+	in.completionSource = in.runner
 	utils.RegisterAdaptiveScanInput(in.runner.AdaptiveScanID(), adaptiveScanMetadataFromTask(taskCfg))
 
 	logp.L.Infof("add input(%s) to global inputMaps", in.ID)
@@ -148,7 +150,19 @@ type Input struct {
 	runOnce  sync.Once
 	stopOnce sync.Once
 
+	// completionSource is the optional finite-input completion interface of the
+	// Runner. It is a small local interface so tests can inject a fake source.
+	completionSource completionSource
+	completionOnce   sync.Once
+
 	stateSender func(beat.Event)
+}
+
+// completionSource mirrors the optional completion methods exposed by
+// filebeat/input.Runner in the Beats phase-2 change.
+type completionSource interface {
+	Completion() (<-chan struct{}, bool)
+	CompletionErr() error
 }
 
 // Start 启动runner
@@ -157,6 +171,67 @@ func (in *Input) Start() {
 	in.runOnce.Do(func() {
 		in.runner.Start()
 	})
+}
+
+// WatchCompletion starts one goroutine for a finite input. notify, when not
+// nil, runs as soon as the Runner reports completion, before the drain marker
+// is enqueued: the preview coordinator must start its shutdown budget even when
+// a blocked output keeps the marker from reaching the Task.
+//
+// The marker is injected into the same Input.In channel only after the last
+// OnEvent call has returned, then travels through the normal
+// Filter/Processor/Sender/Task chain. An input without a completion signal
+// injects an error marker instead of leaving the coordinator waiting for a
+// completion that can never arrive.
+func (in *Input) WatchCompletion(taskID string, notify func()) {
+	in.completionOnce.Do(func() {
+		source := in.completionSource
+		if source == nil {
+			in.injectDrainError(taskID, notify, errors.New("preview input is not initialized"))
+			return
+		}
+		completion, ok := source.Completion()
+		if !ok {
+			in.injectDrainError(taskID, notify, errors.New("preview input does not report completion"))
+			return
+		}
+		go func() {
+			<-completion
+			if notify != nil {
+				notify()
+			}
+			in.enqueueDrain(&base.DrainMarker{
+				TaskID: taskID,
+				Err:    source.CompletionErr(),
+			})
+		}()
+	})
+}
+
+// injectDrainError is the fallback for inputs without a completion signal. The
+// shutdown budget still starts immediately and the error travels through the
+// regular drain marker path, so the preview reports a terminal error instead of
+// hanging.
+func (in *Input) injectDrainError(taskID string, notify func(), err error) {
+	if notify != nil {
+		notify()
+	}
+	go in.enqueueDrain(&base.DrainMarker{TaskID: taskID, Err: err})
+}
+
+func (in *Input) enqueueDrain(marker *base.DrainMarker) {
+	select {
+	case <-in.End:
+		return
+	case in.In <- marker:
+	}
+}
+
+// GracefulStop stops the finite input producer without tearing down the
+// downstream Task nodes. The coordinator still needs the pipeline alive to
+// drain the final cached package.
+func (in *Input) GracefulStop() {
+	in.stop()
 }
 
 func (in *Input) Run() {
@@ -170,6 +245,13 @@ func (in *Input) Run() {
 		case <-in.End:
 			return
 		case e := <-in.In:
+			// Drain markers bypass rate limiting, metrics and the util.Data
+			// assertion. They are forwarded only along the task's own branch.
+			if marker, ok := e.(*base.DrainMarker); ok {
+				in.ForwardDrain(marker)
+				continue
+			}
+
 			// 处理速率限制，可在一定层度上限制CPU的使用率
 			if utils.IsEnableRateLimiter && utils.GlobalCpuLimiter != nil {
 				checkInterval := utils.GlobalCpuLimiter.GetCheckInterval()

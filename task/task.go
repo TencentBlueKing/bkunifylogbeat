@@ -25,6 +25,7 @@ package task
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/logp"
@@ -48,6 +49,16 @@ type Task struct {
 	input *input.Input
 
 	output outputs.Client
+
+	// previewCompletion is set only for the -T direct-read task. It is called
+	// once after the drain marker reaches the end of the task pipeline.
+	previewCompletion func(error)
+	// previewInputCompletion runs when the finite input reports that it stopped
+	// producing, before the drain marker is injected. The coordinator uses it to
+	// start the fixed shutdown budget even if the marker is stuck behind a
+	// blocked output.
+	previewInputCompletion func()
+	previewOnce            sync.Once
 }
 
 // NewTask 生成采集任务实例
@@ -95,10 +106,34 @@ func NewTask(config *cfg.TaskConfig, beatDone chan struct{}, lastStates []file.S
 	return task, nil
 }
 
+// SetPreviewCompletion marks this task as the -T direct-read preview task and
+// installs the completion callback used by the manager/LogBeat coordinator.
+func (task *Task) SetPreviewCompletion(fn func(error)) {
+	task.previewCompletion = fn
+}
+
+// SetPreviewInputCompletion installs the finite-input completion callback. It
+// fires before the drain marker is enqueued, so the coordinator can bound the
+// whole drain even when the marker never reaches the Task.
+func (task *Task) SetPreviewInputCompletion(fn func()) {
+	task.previewInputCompletion = fn
+}
+
+// StopInput asks the input producer to stop without closing the downstream
+// Task nodes. Used by the signal path so the pipeline can still drain.
+func (task *Task) StopInput() {
+	if task.input != nil {
+		task.input.GracefulStop()
+	}
+}
+
 // Start 负责启动采集任务实例
 func (task *Task) Start() {
 	// 开启输入
 	task.input.Start()
+	if task.previewCompletion != nil {
+		task.input.WatchCompletion(task.Config.ID, task.previewInputCompletion)
+	}
 }
 
 func (task *Task) Run() {
@@ -112,12 +147,27 @@ func (task *Task) Run() {
 			logp.L.Infof("task(%s) is done", task.ID)
 			return
 		case event := <-task.In:
+			if marker, ok := event.(*base.DrainMarker); ok {
+				if marker.TaskID != task.Config.ID {
+					continue
+				}
+				task.completePreview(marker.Err)
+				return
+			}
 			base.CrawlerPackageSendTotal.Add(1)
 			beatEvent := event.(beat.Event)
 			beatEvent = bkpipe_multi.SetEventTaskID(beatEvent, task.Config.ID)
 			beat.SendEvent(beatEvent)
 		}
 	}
+}
+
+func (task *Task) completePreview(err error) {
+	task.previewOnce.Do(func() {
+		if task.previewCompletion != nil {
+			task.previewCompletion(err)
+		}
+	})
 }
 
 // Stop 负责停止采集任务实例，在Filebeat采集插件停止后退出

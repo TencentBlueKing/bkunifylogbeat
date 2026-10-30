@@ -33,6 +33,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse/beat"
@@ -67,6 +68,16 @@ type LogBeat struct {
 
 	// stopOnce 保证任务与 done 通道只停止/关闭一次，重复调用 Stop 安全。
 	stopOnce sync.Once
+	// doneOnce 保护 done：正常 Stop 与收尾预算到期后的强制 abort 都可能关闭它。
+	doneOnce sync.Once
+	// managerStopOnce 只启动一次 Manager.Stop；managerStopped 在其返回后关闭。
+	// 单独用 sync.Once 启动 goroutine 而不是让 Do 执行阻塞操作，避免第一次
+	// Stop 卡住时后续调用者一起永久等待。
+	managerStopOnce sync.Once
+	managerStopped  chan struct{}
+	// aborted 标记预览收尾已走强制退出路径。此后 Stop 不再同步等待 Manager，
+	// 因为那次等待已经在 abort 中有界完成过。
+	aborted atomic.Bool
 }
 
 // New create cadvisor beat
@@ -171,6 +182,42 @@ func (bt *LogBeat) Run() error {
 		bt.Stop()
 		return fmt.Errorf("could not start manager: %w", err)
 	}
+	previewDone := bt.manager.PreviewDone()
+	previewInputDone := bt.manager.PreviewInputDone()
+
+	// The fixed shutdown budget is shared by the normal completion path and the
+	// signal path. It starts on the first of: finite input completion, SIGTERM.
+	// A nil previewDone keeps every preview branch below disabled.
+	var previewBudget *previewFinalizeBudget
+	var previewDeadline <-chan time.Time
+	// previewWatchdogC is nil outside preview mode, so its select case stays
+	// disabled and non-preview behavior is unchanged.
+	var previewWatchdogC <-chan time.Time
+	if previewDone != nil {
+		previewBudget = newPreviewFinalizeBudget(previewFinalizeTimeout)
+		defer previewBudget.stop()
+
+		// Absolute preview watchdog. It is armed as soon as the preview is known
+		// to be active and does not depend on Runner.Completion: when a Task is
+		// blocked inside OnEvent because the output stopped consuming, completion
+		// never closes, so neither previewInputDone nor previewDone can start a
+		// budget. The watchdog still forces the abort path and makes Run return.
+		watchdogTimeout := bt.manager.PreviewWatchdogTimeout()
+		previewWatchdog := newPreviewWatchdog(watchdogTimeout)
+		defer previewWatchdog.Stop()
+		previewWatchdogC = previewWatchdog.C
+		logp.L.Infof("preview watchdog armed for %s", watchdogTimeout)
+
+		if previewInputDone != nil {
+			// The input may have completed before the loop was entered.
+			select {
+			case <-previewInputDone:
+				previewInputDone = nil
+				previewDeadline = previewBudget.start()
+			default:
+			}
+		}
+	}
 
 	if runtime.GOOS == "windows" {
 		go bt.windowsReload()
@@ -206,8 +253,30 @@ func (bt *LogBeat) Run() error {
 			}
 		case <-beat.ReloadChan:
 			bt.isReload = true
+		// 有限输入已完成、排空标记即将注入。输出背压可能让标记永远到不了
+		// Task，因此收尾预算必须从这一刻开始计时，而不是等预览完成信号。
+		case <-previewInputDone:
+			previewInputDone = nil
+			previewDeadline = previewBudget.start()
+		// 收尾预算到期：先断开 publisher 解除 Publish 阻塞，再有界等待
+		// Manager.Stop，保证 Run 一定返回。
+		case <-previewDeadline:
+			return bt.abortPreview(errPreviewFinalizeTimeout)
+		// 绝对看门狗到期：Completion 永不到达（例如输出背压让 OnEvent 阻塞），
+		// 完成信号及其收尾预算都无从启动；同样走强制 abort 路径。
+		case <-previewWatchdogC:
+			return bt.abortPreview(errPreviewWatchdogExpired)
+		// The finite Kafka preview finished on its own: the producer has
+		// stopped, the drain marker has traversed the Task pipeline and the
+		// Sender cache has been flushed.
+		case <-previewDone:
+			return bt.finishPreview(bt.manager.PreviewErr(), previewBudget)
 		// 处理采集器框架发送的结束采集器的信号（常由SIGINT引起），关闭采集器
 		case <-beat.Done:
+			if previewDone != nil {
+				previewBudget.start()
+				return bt.finishPreviewAfterSignal(previewBudget)
+			}
 			bt.Stop()
 			return nil
 		}
@@ -216,17 +285,159 @@ func (bt *LogBeat) Run() error {
 	return nil
 }
 
+// finishPreview waits for every published event to be acknowledged and for the
+// console batch to be flushed, then stops the Task/Manager. Registrar.Stop is
+// still owned by Run's defer; storage is released by main's beat.Stop() after
+// Registrar.Stop returns.
+//
+// The ACK wait and the final Manager.Stop are bounded: when the shared
+// finalization budget expires the preview aborts instead of calling Stop
+// synchronously, because a blocked publisher keeps Manager.Stop inside
+// Task.Stop forever.
+func (bt *LogBeat) finishPreview(err error, budget *previewFinalizeBudget) error {
+	if budget == nil {
+		budget = newPreviewFinalizeBudget(previewFinalizeTimeout)
+		defer budget.stop()
+	}
+	budget.start()
+
+	if budget.expired() {
+		if err == nil {
+			err = errPreviewFinalizeTimeout
+		}
+		return bt.abortPreview(err)
+	}
+
+	if waitErr := waitPublishIdle(budget.remaining()); waitErr != nil {
+		if err == nil {
+			err = waitErr
+		}
+		if budget.expired() {
+			// The ACK/console drain did not finish inside the shared window:
+			// force the publisher release instead of risking an unbounded
+			// Manager.Stop.
+			return bt.abortPreview(err)
+		}
+	}
+
+	if !bt.stopManagerBounded(previewStopTimeout) {
+		// Manager.Stop is still running (a Task is stuck). Mark the beat as
+		// aborted so a later Stop from the framework signal path does not wait
+		// for the same Manager.Stop again without a bound.
+		bt.aborted.Store(true)
+		logp.L.Errorf("preview shutdown: manager did not stop within %s after drain", previewStopTimeout)
+		if err == nil {
+			err = fmt.Errorf("manager did not stop within %s after preview drain", previewStopTimeout)
+		}
+	}
+	bt.closeDone()
+	return err
+}
+
+// finishPreviewAfterSignal runs the same order as a normal completion, but
+// first asks the Kafka input to stop and waits for its drain marker. It returns
+// a non-nil error because an externally terminated preview is not a successful
+// sample.
+func (bt *LogBeat) finishPreviewAfterSignal(budget *previewFinalizeBudget) error {
+	if budget == nil {
+		budget = newPreviewFinalizeBudget(previewFinalizeTimeout)
+		defer budget.stop()
+	}
+	bt.manager.StopPreviewInputs()
+
+	select {
+	case <-bt.manager.PreviewDone():
+	case <-budget.start():
+		return bt.abortPreview(errors.New("preview did not drain after shutdown signal"))
+	}
+
+	err := bt.manager.PreviewErr()
+	if err == nil {
+		err = errors.New("preview canceled by shutdown signal")
+	}
+	return bt.finishPreview(err, budget)
+}
+
+// abortPreview forcibly tears the preview down when the shared shutdown budget
+// expires. The publisher client must be released first: a Task or Sender
+// goroutine blocked inside Publish on a full output queue is only released by
+// closing the client, and stopping the Task before that would wait forever.
+// The remaining Manager.Stop wait is bounded, and Run always returns so
+// Registrar.Stop and main's beat.Stop can release the Storage.
+func (bt *LogBeat) abortPreview(cause error) error {
+	if cause == nil {
+		cause = errPreviewFinalizeTimeout
+	}
+	logp.L.Errorf("preview shutdown aborted, releasing publisher: %v", cause)
+
+	// 1. Disconnect the publisher. The libgse API is idempotent, does not stop
+	// the reloader, does not release Storage and does not close Done.
+	bt.aborted.Store(true)
+	stopPublish()
+
+	// 2. Never call bt.Stop synchronously here: Manager.Stop joins the Task
+	// goroutines and may still block on a stuck output worker.
+	if !bt.stopManagerBounded(previewStopTimeout) {
+		logp.L.Errorf("preview abort: manager did not stop within %s", previewStopTimeout)
+	}
+
+	// 3. Release Task loops waiting on done. Registrar.Stop (Run defer) and
+	// beat.Stop (main) complete the remaining cleanup.
+	bt.closeDone()
+	return fmt.Errorf("preview aborted: %w", cause)
+}
+
+// startManagerStop launches Manager.Stop at most once and returns a channel that
+// is closed when it returned. It returns immediately, so callers can bound the
+// wait; a stuck first stop must not make later callers block inside sync.Once.
+func (bt *LogBeat) startManagerStop() <-chan struct{} {
+	bt.managerStopOnce.Do(func() {
+		stopped := make(chan struct{})
+		bt.managerStopped = stopped
+		// Snapshot the seam and the manager before the goroutine starts: the
+		// stop implementation must not be read concurrently with a test seam
+		// restoration, and Manager.Stop may block forever on a stuck Task.
+		stop := stopManager
+		manager := bt.manager
+		go func() {
+			defer close(stopped)
+			if manager != nil {
+				_ = stop(manager)
+			}
+		}()
+	})
+	return bt.managerStopped
+}
+
+func (bt *LogBeat) stopManagerBounded(timeout time.Duration) bool {
+	select {
+	case <-bt.startManagerStop():
+		return true
+	case <-time.After(timeout):
+		return false
+	}
+}
+
+func (bt *LogBeat) closeDone() {
+	if bt.done == nil {
+		return
+	}
+	bt.doneOnce.Do(func() {
+		close(bt.done)
+	})
+}
+
 // Stop beater interface
 // 幂等：重复调用不会重复停止 Manager，也不会重复 close(done)；
 // manager/done 为空（例如测试中直接构造 LogBeat）时同样安全。
 func (bt *LogBeat) Stop() {
 	bt.stopOnce.Do(func() {
-		if bt.manager != nil {
-			bt.manager.Stop()
+		if !bt.aborted.Load() {
+			// Wait for Manager.Stop as before. startManagerStop returns the
+			// shared channel immediately, so repeated Stop calls stay safe.
+			<-bt.startManagerStop()
 		}
-		if bt.done != nil {
-			close(bt.done)
-		}
+		bt.closeDone()
 	})
 }
 
@@ -284,6 +495,10 @@ func (bt *LogBeat) Close() error {
 
 // Reload beater interface
 func (bt *LogBeat) Reload(c *beat.Config) {
+	if bt.manager != nil && bt.manager.preview {
+		logp.L.Info("ignoring reload during managed preview")
+		return
+	}
 	logp.L.Infof("reload with: %v", c)
 	err := bt.ParseConfig(c)
 	if err != nil {

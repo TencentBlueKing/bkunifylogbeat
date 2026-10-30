@@ -157,6 +157,11 @@ func (p *Processors) Run() {
 			// node is done
 			return
 		case e := <-p.In:
+			if marker, ok := e.(*base.DrainMarker); ok {
+				// Drain markers bypass transformation, extraction and statistics.
+				p.ForwardDrain(marker)
+				continue
+			}
 			data := e.(*util.Data)
 			taskData := p.process(data)
 			if taskData != nil {

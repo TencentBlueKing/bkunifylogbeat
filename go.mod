@@ -5,7 +5,7 @@ go 1.24.0
 toolchain go1.24.11
 
 require (
-	github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse v1.12.0
+	github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse v1.12.1
 	github.com/TencentBlueKing/bkmonitor-datalink/pkg/utils v0.4.0-rc.1
 	github.com/bytedance/sonic v1.15.0
 	github.com/cespare/xxhash/v2 v2.2.0
@@ -124,7 +124,7 @@ require (
 
 replace (
 	github.com/Sirupsen/logrus v1.6.0 => github.com/sirupsen/logrus v1.9.3
-	github.com/elastic/beats v7.1.1+incompatible => github.com/TencentBlueking/beats v7.1.60-bk+incompatible
+	github.com/elastic/beats v7.1.1+incompatible => github.com/TencentBlueking/beats v7.1.61-bk+incompatible
 	github.com/sirupsen/logrus v1.8.1 => github.com/sirupsen/logrus v1.9.3
 	golang.org/x/exp => golang.org/x/exp v0.0.0-20230307190834-24139beb5833
 )

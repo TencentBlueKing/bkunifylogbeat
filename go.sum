@@ -39,12 +39,12 @@ github.com/Shopify/toxiproxy v2.1.4+incompatible h1:TKdv8HiTLgE5wdJuEML90aBgNWso
 github.com/Shopify/toxiproxy v2.1.4+incompatible/go.mod h1:OXgGpZ6Cli1/URJOF1DMxUHB2q5Ap20/P/eIdh4G0pI=
 github.com/StackExchange/wmi v1.2.1 h1:VIkavFPXSjcnS+O8yTq7NI32k0R5Aj+v39y29VYDOSA=
 github.com/StackExchange/wmi v1.2.1/go.mod h1:rcmrprowKIVzvc+NUiLncP2uuArMWLCbu9SBzvHz7e8=
-github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse v1.12.0 h1:555nJ0uPrvnc7fEY6bbIs6ONf7N+0C+jSxBhJU794T4=
-github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse v1.12.0/go.mod h1:oAeSDFeqMlpGefP+EcFVmRQ9TYoBBoZYo0wr+cZaoXc=
+github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse v1.12.1 h1:miMkRx1BJ0pDPrxNq/b62hblhlqTUMEFiCAbs7ZTatw=
+github.com/TencentBlueKing/bkmonitor-datalink/pkg/libgse v1.12.1/go.mod h1:FqRlSEp6hYUPVEm0wGRnSoWsQYOVJNGisspHw3pUbzM=
 github.com/TencentBlueKing/bkmonitor-datalink/pkg/utils v0.4.0-rc.1 h1:Qat0qQx29h1sLUKWHugSzJevrHU6z3wNKLrCl4Be/IA=
 github.com/TencentBlueKing/bkmonitor-datalink/pkg/utils v0.4.0-rc.1/go.mod h1:GHkb8EqJzcFHsZ4i2nI+ZNFvxv0oRbMsI/0me0Djstg=
-github.com/TencentBlueking/beats v7.1.60-bk+incompatible h1:vjdnYo1mRew+AXAmmY1aqNC5+1CGOZZcRCLBxgXcNXQ=
-github.com/TencentBlueking/beats v7.1.60-bk+incompatible/go.mod h1:tJ6ZFzI1DAUQUUyvPBYVlmGBuH3QKGDK9mwN4LBg+Os=
+github.com/TencentBlueking/beats v7.1.61-bk+incompatible h1:1l8bqnp5LzWQoAJSzcxC7PHSgcbtLxyw7cvCyX0U8Bg=
+github.com/TencentBlueking/beats v7.1.61-bk+incompatible/go.mod h1:tJ6ZFzI1DAUQUUyvPBYVlmGBuH3QKGDK9mwN4LBg+Os=
 github.com/andrewkroh/sys v0.0.0-20151128191922-287798fe3e43 h1:WFwa9pqou0Nb4DdfBOyaBTH0GqLE74Qwdf61E7ITHwQ=
 github.com/andrewkroh/sys v0.0.0-20151128191922-287798fe3e43/go.mod h1:tJPYQG4mnMeUtQvQKNkbsFrnmZOg59Qnf8CcctFv5v4=
 github.com/antihax/optional v1.0.0/go.mod h1:uupD/76wgC+ih3iEmQUL+0Ugr19nfwCT1kdvxnR2qWY=

@@ -31,6 +31,7 @@ import (
 	libbeatlogp "github.com/elastic/beats/libbeat/logp"
 
 	cfg "github.com/TencentBlueKing/bkunifylogbeat/config"
+	"github.com/TencentBlueKing/bkunifylogbeat/task/base"
 	"github.com/TencentBlueKing/bkunifylogbeat/tests"
 )
 
@@ -240,5 +241,35 @@ func TestFilters_Handle_Regex(t *testing.T) {
 	if event.Fields == nil {
 		t.Error("filter error. not effect")
 		return
+	}
+}
+
+func TestFiltersDrainMarkerBypassesFiltering(t *testing.T) {
+	filter := &Filters{
+		Node:           base.NewEmptyNode("filter-drain"),
+		taskConfigMaps: map[string]*cfg.TaskConfig{},
+	}
+	processor := base.NewEmptyNode("processor-drain")
+	filter.AddOutput(processor)
+	filter.AddTaskNode(processor, &base.TaskNode{Node: base.NewEmptyNode("task-drain")})
+
+	go filter.Run()
+	filter.In <- &base.DrainMarker{TaskID: "task-drain"}
+
+	select {
+	case raw := <-processor.In:
+		marker, ok := raw.(*base.DrainMarker)
+		if !ok || marker.TaskID != "task-drain" {
+			t.Fatalf("unexpected marker: %#v", raw)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("drain marker was filtered out")
+	}
+
+	close(filter.End)
+	select {
+	case <-filter.GameOver:
+	case <-time.After(time.Second):
+		t.Fatal("filter did not stop")
 	}
 }

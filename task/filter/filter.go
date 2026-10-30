@@ -140,6 +140,11 @@ func (f *Filters) Run() {
 			// node is done
 			return
 		case e := <-f.In:
+			if marker, ok := e.(*base.DrainMarker); ok {
+				// Drain markers are control events: never filter, count or format.
+				f.ForwardDrain(marker)
+				continue
+			}
 			data := e.(*util.Data)
 			if data.Event.HasTexts() {
 				f.batchFilter(data)
