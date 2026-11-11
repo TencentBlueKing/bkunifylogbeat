@@ -1,3 +1,18 @@
+{# Go YAML rejects the UTF-16 surrogate pairs produced by tojson for non-BMP characters. #}
+{# NodeMan renders context strings before this template; producers must neutralize literal Jinja syntax. #}
+{% macro yaml_string(value) -%}
+"
+{%- for char in value|string -%}
+{%- if '\ud800' <= char <= '\udfff' or char in '\ufffe\uffff' -%}
+{{ '\ufffd' }}
+{%- else -%}
+{%- set encoded = char|tojson -%}
+{%- if encoded|length > 8 -%}{{ char }}{%- else -%}{{ encoded[1:-1] }}{%- endif -%}
+{%- endif -%}
+{%- endfor -%}
+"
+{%- endmacro %}
+
 {% if local is defined %}
 local: {% for item in local %}
     - dataid: {{ dataid | int }}
@@ -30,13 +45,13 @@ local: {% for item in local %}
       {% if item.ext_meta is defined or item.labels is defined %}ext_meta:
       {%- if item.ext_meta is defined %}
       {%- for key, value in item.ext_meta.items() %}
-        {{ key }}: "{{ value }}"
+        {{ yaml_string(key) }}: {{ yaml_string(value) }}
       {%- endfor %}
       {%- endif %}
       {%- if item.labels is defined %}
       {%- for label in item.labels %}
       {%- for key, value in label.items() %}
-        {{ key }}: "{{ value }}"
+        {{ yaml_string(key) }}: {{ yaml_string(value) }}
       {%- endfor %}
       {%- endfor %}
       {%- endif %}
